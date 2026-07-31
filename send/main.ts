@@ -13,6 +13,7 @@
 //   handles erasures, and a frame is either decoded whole or discarded.
 
 import QRCode from "qrcode";
+import { fitQrDisplaySize } from "../shared/display";
 import { LTEncoder } from "../shared/fountain";
 import { packPrivateNote } from "../shared/notes";
 import {
@@ -47,6 +48,7 @@ let selectedFile: {
   transmittedSize: number;
 } | null = null;
 let generation = 0; // bumped on every restart; stale loops see it and die
+let resizeDisplay: (() => void) | null = null;
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -108,6 +110,7 @@ async function selectNote(): Promise<void> {
 async function main() {
   cfgFile?.addEventListener("change", () => void selectFile());
   sendNoteBtn?.addEventListener("click", () => void selectNote());
+  window.addEventListener("resize", () => resizeDisplay?.());
   for (const el of [cfgFps, cfgBytes, cfgEcc, cfgSize]) {
     el.addEventListener("change", () => void startStream());
   }
@@ -121,6 +124,7 @@ async function main() {
 
 async function startStream() {
   const gen = ++generation;
+  resizeDisplay = null;
   if (!selectedFile) {
     specs.textContent = transferMode === "note" ? "write a note to begin" : "choose a file to begin";
     return;
@@ -160,7 +164,20 @@ async function startStream() {
   const sizeCanvas = () => {
     const dpr = window.devicePixelRatio || 1;
     const total = modules + 2 * MARGIN;
-    const cssBudget = Math.min(0.9 * Math.min(window.innerWidth, window.innerHeight), displayPx);
+    const containerWidth = stage.parentElement?.getBoundingClientRect().width ?? window.innerWidth;
+    const stageStyle = getComputedStyle(stage);
+    const horizontalChrome =
+      Number.parseFloat(stageStyle.paddingLeft) +
+      Number.parseFloat(stageStyle.paddingRight) +
+      Number.parseFloat(stageStyle.borderLeftWidth) +
+      Number.parseFloat(stageStyle.borderRightWidth);
+    const cssBudget = fitQrDisplaySize(
+      window.innerWidth,
+      window.innerHeight,
+      containerWidth,
+      displayPx,
+      horizontalChrome,
+    );
     scale = Math.max(1, Math.floor((cssBudget * dpr) / total));
     staging.width = total;
     staging.height = total;
@@ -182,6 +199,7 @@ async function startStream() {
       version = qr.version;
       modules = qr.modules.size;
       sizeCanvas();
+      resizeDisplay = sizeCanvas;
       specs.textContent =
         `${txFps} FPS · ${frameBytes} bytes per frame · V${version} · ECC ${ecc} · ` +
         `${name} · ${formatBytes(fileSize)} · ` +

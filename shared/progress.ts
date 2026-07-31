@@ -2,7 +2,7 @@ export const EXPECTED_FOUNTAIN_OVERHEAD = 1.18;
 
 export interface TransferProgressEstimate {
   fraction: number;
-  targetFrames: number;
+  minimumFrames: number;
   etaSeconds?: number;
   finishing: boolean;
 }
@@ -12,18 +12,18 @@ export function estimateTransferProgress(
   uniqueFrames: number,
   elapsedSeconds: number,
 ): TransferProgressEstimate {
-  const targetFrames = Math.max(
-    sourceBlocks,
-    Math.ceil(sourceBlocks * EXPECTED_FOUNTAIN_OVERHEAD),
-  );
-  const finishing = uniqueFrames >= targetFrames;
-  const fraction = finishing ? 0.99 : Math.min(0.99, uniqueFrames / targetFrames);
+  // K source blocks is the only hard milestone: recovery cannot complete
+  // before K independent frames, but fountain overhead varies per stream.
+  // Fill toward K, then hold at 99% until the decoder actually completes.
+  const minimumFrames = Math.max(1, sourceBlocks);
+  const finishing = uniqueFrames >= minimumFrames;
+  const fraction = finishing ? 0.99 : Math.min(0.99, uniqueFrames / minimumFrames);
   const rate = elapsedSeconds > 0 ? uniqueFrames / elapsedSeconds : 0;
   const etaSeconds =
     uniqueFrames >= 3 && elapsedSeconds >= 1 && rate > 0 && !finishing
-      ? (targetFrames - uniqueFrames) / rate
+      ? (minimumFrames - uniqueFrames) / rate
       : undefined;
-  return { fraction, targetFrames, etaSeconds, finishing };
+  return { fraction, minimumFrames, etaSeconds, finishing };
 }
 
 export function formatDuration(seconds: number): string {

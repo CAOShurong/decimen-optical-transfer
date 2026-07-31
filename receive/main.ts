@@ -197,8 +197,7 @@ function updateProgressEstimate() {
   const shownPercent = percent < 10 ? percent.toFixed(1) : percent.toFixed(0);
   bar.style.width = `${percent.toFixed(1)}%`;
   progressEl.setAttribute("aria-valuenow", String(Math.floor(percent)));
-  progressLabel.textContent =
-    `${shownPercent}% · ${decoder.framesNew}/${estimate.targetFrames} unique frames`;
+  progressLabel.textContent = `${shownPercent}% · ${decoder.framesNew} unique frames`;
   etaLabel.textContent = estimate.finishing
     ? "Finishing recovery…"
     : estimate.etaSeconds === undefined

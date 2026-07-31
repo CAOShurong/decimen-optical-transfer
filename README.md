@@ -89,7 +89,8 @@ mean dropped frames, which the fountain happily absorbs.
   zombie capture loop.
 - **Progress bars must track frames collected, not blocks solved.** LT
   peeling back-loads its solve cascade: block-count progress looks stalled
-  for most of the transfer, then teleports to 100%.
+  for most of the transfer, then teleports to 100%. The receiver estimates
+  remaining time from its observed unique-frame rate.
 - **QR error correction is set to the minimum (L).** In-frame ECC and the
   fountain layer solve different problems (corruption vs erasure), but at
   these frame sizes level L plus frame disposal is the better trade.

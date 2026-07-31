@@ -9,9 +9,12 @@
 //   cascade, so blocks-solved looks stalled and then teleports to done.
 
 import { LTDecoder } from "../shared/fountain";
+import {
+  EXPECTED_FOUNTAIN_OVERHEAD,
+  estimateTransferProgress,
+  formatDuration,
+} from "../shared/progress";
 import { fnv1a, parseFrame, unpackFile, verifyFile } from "../shared/protocol";
-
-const OVERHEAD_EST = 1.18; // expected frames ≈ K × this (robust-soliton ε)
 
 const startBtn = document.getElementById("start") as HTMLButtonElement;
 const video = document.getElementById("video") as HTMLVideoElement;
@@ -19,6 +22,9 @@ const preview = document.getElementById("preview")!;
 const stats = document.getElementById("stats")!;
 const progressEl = document.getElementById("progress")!;
 const bar = document.getElementById("bar")!;
+const progressStatus = document.getElementById("progress-status")!;
+const progressLabel = document.getElementById("progress-label")!;
+const etaLabel = document.getElementById("eta-label")!;
 const result = document.getElementById("result")!;
 const settings = document.getElementById("settings") as HTMLDetailsElement;
 const metricsEl = document.getElementById("metrics")!;
@@ -150,10 +156,10 @@ function onDecoded(bytes: Uint8Array) {
     sessionId = header.sessionId;
     startTs = performance.now();
     progressEl.style.display = "block";
+    progressStatus.style.display = "flex";
   }
   decoder.addFrame(header.seq, block);
-  const progress = Math.min(0.99, decoder.framesNew / (decoder.k * OVERHEAD_EST));
-  bar.style.width = `${(progress * 100).toFixed(1)}%`;
+  updateProgressEstimate();
 
   if (decoder.isComplete) {
     const payload = decoder.assemble()!;
@@ -163,12 +169,32 @@ function onDecoded(bytes: Uint8Array) {
   }
 }
 
+function updateProgressEstimate() {
+  if (!decoder) return;
+  const elapsed = Math.max(0, (performance.now() - startTs) / 1000);
+  const estimate = estimateTransferProgress(decoder.k, decoder.framesNew, elapsed);
+  const percent = estimate.fraction * 100;
+  const shownPercent = percent < 10 ? percent.toFixed(1) : percent.toFixed(0);
+  bar.style.width = `${percent.toFixed(1)}%`;
+  progressEl.setAttribute("aria-valuenow", String(Math.floor(percent)));
+  progressLabel.textContent =
+    `${shownPercent}% · ${decoder.framesNew}/${estimate.targetFrames} unique frames`;
+  etaLabel.textContent = estimate.finishing
+    ? "Finishing recovery…"
+    : estimate.etaSeconds === undefined
+      ? "Estimating time…"
+      : `About ${formatDuration(estimate.etaSeconds)} remaining`;
+}
+
 async function finish(container: Uint8Array, hashOk: boolean, seconds: number) {
   done = true;
   captureGen++;
   stream?.getTracks().forEach((t) => t.stop());
   preview.style.display = "none";
   bar.style.width = "100%";
+  progressEl.setAttribute("aria-valuenow", "100");
+  progressLabel.textContent = "100% · file recovered";
+  etaLabel.textContent = `${formatDuration(seconds)} total`;
   try {
     if (!hashOk) throw new Error("The optical stream checksum did not match.");
     const file = await unpackFile(container);
@@ -198,6 +224,7 @@ async function finish(container: Uint8Array, hashOk: boolean, seconds: number) {
     }
   } catch (error) {
     bar.classList.add("error");
+    etaLabel.textContent = "Verification failed";
     stats.textContent = `✗ ${error instanceof Error ? error.message : String(error)}`;
   }
 }
@@ -214,7 +241,12 @@ function updateStats() {
   metric("m-dec").textContent = (decodeTimes.length / 2).toFixed(1);
   if (!decoder) return;
   const elapsed = (now - startTs) / 1000;
-  const kbs = (decoder.framesNew * decoder.blockLen) / OVERHEAD_EST / 1024 / Math.max(0.1, elapsed);
+  updateProgressEstimate();
+  const kbs =
+    (decoder.framesNew * decoder.blockLen) /
+    EXPECTED_FOUNTAIN_OVERHEAD /
+    1024 /
+    Math.max(0.1, elapsed);
   metric("m-rate").textContent = `${kbs.toFixed(1)} KB/s`;
   metric("m-time").textContent = `${elapsed.toFixed(0)} s`;
   metric("m-frames").textContent = `${decoder.framesNew}/${decoder.framesDup}`;

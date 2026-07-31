@@ -47,6 +47,38 @@ button {
   font-weight: 700;
   cursor: pointer;
 }
+.file-picker {
+  width: min(92vw, 640px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #ede5d4;
+  background: #1b1712;
+  border: 1px solid #4c3b22;
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.file-picker span {
+  color: #ffb257;
+  font-weight: 700;
+}
+.file-picker input {
+  max-width: 100%;
+  font: inherit;
+}
+.file-picker input::file-selector-button {
+  margin-right: 10px;
+  color: #121009;
+  background: #ffb257;
+  border: 0;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
 .stage {
   background: #fff;
   padding: 20px;
@@ -79,6 +111,9 @@ button {
   background: #ffb257;
   transition: width 0.25s;
 }
+.progress > div.error {
+  background: #d86455;
+}
 .done {
   color: #7dc98f;
   font-size: 22px;
@@ -87,6 +122,22 @@ button {
 img.received {
   max-width: min(92vw, 640px);
   border-radius: 10px;
+}
+#result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+a.download {
+  display: inline-block;
+  color: #121009;
+  background: #ffb257;
+  border-radius: 8px;
+  padding: 12px 20px;
+  font-size: 16px;
+  font-weight: 700;
+  text-decoration: none;
 }
 details.settings {
   width: min(92vw, 640px);

@@ -8,9 +8,10 @@ The payload travels as light.
 
 This is a minimal proof of concept extracted from a larger
 experiment that reached **128 KB/s phone-to-phone** with denser frames,
-multi-code grids, and an error-corrected color channel. This PoC keeps only
-the essential trick and transmits a 512 KB image (or a 2 MB one, selectable
-in the sender's settings) at a comfortable rate.
+multi-code grids, and an error-corrected color channel. This version accepts
+arbitrary files up to 64 MB, preserves their filename and media type inside
+the fountain stream, adaptively uses gzip only when it shrinks the optical
+payload, and verifies SHA-256 before offering the received file for download.
 
 <p align="center">
   <img src="docs/receiving.jpg" width="420"
@@ -26,13 +27,13 @@ npm run dev
 ```
 
 - On the **sending** device (a laptop is ideal): open
-  `https://localhost:5173/send/` and it starts streaming immediately. Max
+  `https://localhost:5173/send/`, choose a file, and it starts streaming. Max
   screen brightness helps.
 - On the **receiving** device (a phone): open the `Network` URL Vite prints
   (`https://<lan-ip>:5173/receive/`), accept the certificate warning once,
   tap **Start camera**, and point it at the code.
-- A few seconds later: *Transfer Complete!* and the received image, verified
-  by hash.
+- When recovery completes, save the received file after its SHA-256 check
+  passes.
 
 **Why the dev server is https-only:** the receiver uses `getUserMedia`, and
 browsers remove that API entirely on insecure origins: a phone reaching

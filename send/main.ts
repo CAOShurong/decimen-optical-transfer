@@ -14,37 +14,76 @@
 
 import QRCode from "qrcode";
 import { LTEncoder } from "../shared/fountain";
-import { HEADER_LEN, fnv1a, packFrame, type FrameHeader } from "../shared/protocol";
+import {
+  HEADER_LEN,
+  MAX_FILE_BYTES,
+  fnv1a,
+  packFile,
+  packFrame,
+  type FrameHeader,
+} from "../shared/protocol";
 
 const MARGIN = 4; // quiet-zone modules
 const LOOKAHEAD = 3;
 
 const canvas = document.getElementById("qr") as HTMLCanvasElement;
+const stage = document.getElementById("stage") as HTMLDivElement;
 const specs = document.getElementById("specs")!;
-const cfgPayload = document.getElementById("cfg-payload") as HTMLSelectElement;
+const cfgFile = document.getElementById("cfg-file") as HTMLInputElement;
 const cfgFps = document.getElementById("cfg-fps") as HTMLSelectElement;
 const cfgBytes = document.getElementById("cfg-bytes") as HTMLSelectElement;
 const cfgEcc = document.getElementById("cfg-ecc") as HTMLSelectElement;
 const cfgSize = document.getElementById("cfg-size") as HTMLInputElement;
 
-const payloadCache = new Map<string, Uint8Array>();
+let selectedFile: {
+  name: string;
+  size: number;
+  payload: Uint8Array;
+  compression: "none" | "gzip";
+  transmittedSize: number;
+} | null = null;
 let generation = 0; // bumped on every restart; stale loops see it and die
 
-async function loadPayload(url: string): Promise<Uint8Array | null> {
-  const hit = payloadCache.get(url);
-  if (hit) return hit;
-  const res = await fetch(url);
-  if (!res.ok) return null;
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  payloadCache.set(url, bytes);
-  return bytes;
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+async function selectFile(): Promise<void> {
+  const file = cfgFile.files?.[0];
+  if (!file) return;
+  const selectionGeneration = ++generation;
+  selectedFile = null;
+  stage.hidden = true;
+  if (file.size === 0 || file.size > MAX_FILE_BYTES) {
+    specs.textContent = file.size === 0 ? "✗ choose a non-empty file" : "✗ files are limited to 64 MB";
+    return;
+  }
+
+  specs.textContent = `preparing ${file.name}…`;
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const packed = await packFile(file.name, file.type, bytes);
+    if (selectionGeneration !== generation) return;
+    selectedFile = {
+      name: file.name,
+      size: file.size,
+      payload: packed.container,
+      compression: packed.compression,
+      transmittedSize: packed.transmittedSize,
+    };
+    await startStream();
+  } catch (error) {
+    specs.textContent = `✗ ${error instanceof Error ? error.message : String(error)}`;
+  }
 }
 
 async function main() {
-  for (const el of [cfgPayload, cfgFps, cfgBytes, cfgEcc, cfgSize]) {
+  cfgFile.addEventListener("change", () => void selectFile());
+  for (const el of [cfgFps, cfgBytes, cfgEcc, cfgSize]) {
     el.addEventListener("change", () => void startStream());
   }
-  await startStream();
   try {
     await (navigator as Navigator & { wakeLock?: { request(t: "screen"): Promise<unknown> } })
       .wakeLock?.request("screen");
@@ -55,11 +94,11 @@ async function main() {
 
 async function startStream() {
   const gen = ++generation;
-  const payload = await loadPayload(cfgPayload.value);
-  if (!payload) {
-    specs.textContent = `✗ couldn't load ${cfgPayload.value}`;
+  if (!selectedFile) {
+    specs.textContent = "choose a file to begin";
     return;
   }
+  const { name, size: fileSize, payload, compression, transmittedSize } = selectedFile;
   if (gen !== generation) return; // superseded while fetching
   const txFps = Number(cfgFps.value);
   const frameBytes = Number(cfgBytes.value);
@@ -68,6 +107,11 @@ async function startStream() {
 
   const sessionId = (Math.floor(Math.random() * 0xffff) + 1) & 0xffff;
   const blockLen = frameBytes - HEADER_LEN;
+  if (Math.ceil(payload.length / blockLen) > 0xffff) {
+    stage.hidden = true;
+    specs.textContent = "✗ this file needs a larger bytes-per-frame setting";
+    return;
+  }
   const encoder = new LTEncoder(payload, blockLen, sessionId);
   const header: FrameHeader = {
     sessionId,
@@ -84,6 +128,7 @@ async function startStream() {
   const staging = document.createElement("canvas");
   const queue: ImageData[] = [];
   let nextSeq = 0;
+  stage.hidden = false;
 
   const sizeCanvas = () => {
     const dpr = window.devicePixelRatio || 1;
@@ -112,7 +157,9 @@ async function startStream() {
       sizeCanvas();
       specs.textContent =
         `${txFps} FPS · ${frameBytes} bytes per frame · V${version} · ECC ${ecc} · ` +
-        `${Math.round(payload.length / 1024)} KB payload · K=${encoder.k}`;
+        `${name} · ${formatBytes(fileSize)} · ` +
+        `${compression === "gzip" ? `gzip ${formatBytes(transmittedSize)}` : "no compression"} · ` +
+        `K=${encoder.k}`;
     }
     const size = qr.modules.size;
     const data = qr.modules.data;

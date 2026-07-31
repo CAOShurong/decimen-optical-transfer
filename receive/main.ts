@@ -9,7 +9,7 @@
 //   cascade, so blocks-solved looks stalled and then teleports to done.
 
 import { LTDecoder } from "../shared/fountain";
-import { fnv1a, parseFrame } from "../shared/protocol";
+import { fnv1a, parseFrame, unpackFile, verifyFile } from "../shared/protocol";
 
 const OVERHEAD_EST = 1.18; // expected frames ≈ K × this (robust-soliton ε)
 
@@ -159,26 +159,47 @@ function onDecoded(bytes: Uint8Array) {
     const payload = decoder.assemble()!;
     const seconds = (performance.now() - startTs) / 1000;
     const ok = fnv1a(payload) === header.payloadFnv;
-    finish(payload, ok, seconds, header.totalLen);
+    void finish(payload, ok, seconds);
   }
 }
 
-function finish(payload: Uint8Array, hashOk: boolean, seconds: number, totalLen: number) {
+async function finish(container: Uint8Array, hashOk: boolean, seconds: number) {
   done = true;
   captureGen++;
   stream?.getTracks().forEach((t) => t.stop());
   preview.style.display = "none";
   bar.style.width = "100%";
-  const kb = Math.round(totalLen / 1024);
-  const rate = (totalLen / 1024 / seconds).toFixed(1);
-  stats.textContent = `${kb} KB in ${seconds.toFixed(1)} s · ${rate} KB/s · hash ${hashOk ? "verified ✓" : "MISMATCH ✗"}`;
-  const heading = document.createElement("div");
-  heading.className = "done";
-  heading.textContent = "Transfer Complete!";
-  const img = document.createElement("img");
-  img.className = "received";
-  img.src = URL.createObjectURL(new Blob([payload as BlobPart], { type: "image/png" }));
-  result.append(heading, img);
+  try {
+    if (!hashOk) throw new Error("The optical stream checksum did not match.");
+    const file = await unpackFile(container);
+    if (!(await verifyFile(file))) throw new Error("The recovered file failed SHA-256 verification.");
+
+    const kb = Math.round(file.bytes.length / 1024);
+    const rate = (container.length / 1024 / seconds).toFixed(1);
+    stats.textContent =
+      `${kb} KB in ${seconds.toFixed(1)} s · ${rate} KB/s · ` +
+      `${file.compression === "gzip" ? "gzip decompressed · " : ""}SHA-256 verified ✓`;
+    const heading = document.createElement("div");
+    heading.className = "done";
+    heading.textContent = "Transfer Complete!";
+    const url = URL.createObjectURL(new Blob([file.bytes as BlobPart], { type: file.type }));
+    const download = document.createElement("a");
+    download.className = "download";
+    download.href = url;
+    download.download = file.name;
+    download.textContent = `Save ${file.name}`;
+    result.replaceChildren(heading, download);
+    if (file.type.startsWith("image/")) {
+      const image = document.createElement("img");
+      image.className = "received";
+      image.alt = `Received file preview: ${file.name}`;
+      image.src = url;
+      result.append(image);
+    }
+  } catch (error) {
+    bar.classList.add("error");
+    stats.textContent = `✗ ${error instanceof Error ? error.message : String(error)}`;
+  }
 }
 
 function updateStats() {

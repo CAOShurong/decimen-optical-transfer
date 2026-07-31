@@ -14,8 +14,17 @@ import {
   estimateTransferProgress,
   formatDuration,
 } from "../shared/progress";
+import {
+  clearStoredNotes,
+  deleteStoredNote,
+  loadStoredNotes,
+  storeReceivedNote,
+  unpackPrivateNote,
+  type StoredNote,
+} from "../shared/notes";
 import { fnv1a, parseFrame, unpackFile, verifyFile } from "../shared/protocol";
 
+const transferMode = document.body.dataset.transferMode === "note" ? "note" : "file";
 const startBtn = document.getElementById("start") as HTMLButtonElement;
 const video = document.getElementById("video") as HTMLVideoElement;
 const preview = document.getElementById("preview")!;
@@ -28,6 +37,10 @@ const etaLabel = document.getElementById("eta-label")!;
 const result = document.getElementById("result")!;
 const settings = document.getElementById("settings") as HTMLDetailsElement;
 const metricsEl = document.getElementById("metrics")!;
+const diagnosticsEl = document.getElementById("diagnostics") as HTMLDetailsElement | null;
+const notesList = document.getElementById("notes-list");
+const notesEmpty = document.getElementById("notes-empty");
+const clearNotesBtn = document.getElementById("clear-notes") as HTMLButtonElement | null;
 const metric = (id: string) => document.getElementById(id)!;
 
 let stream: MediaStream | null = null;
@@ -43,6 +56,12 @@ const captureTimes: number[] = [];
 const decodeTimes: number[] = [];
 
 startBtn.onclick = () => void start();
+clearNotesBtn?.addEventListener("click", () => {
+  if (!window.confirm("Delete every note stored in this browser?")) return;
+  clearStoredNotes(localStorage);
+  renderStoredNotes();
+});
+if (transferMode === "note") renderStoredNotes();
 
 async function start() {
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -60,6 +79,7 @@ async function start() {
   startBtn.style.display = "none";
   preview.style.display = "block";
   metricsEl.style.display = "grid";
+  if (diagnosticsEl) diagnosticsEl.style.display = "block";
   const base: MediaTrackConstraints = {
     facingMode: "environment",
     width: { ideal: captureWidth },
@@ -193,10 +213,21 @@ async function finish(container: Uint8Array, hashOk: boolean, seconds: number) {
   preview.style.display = "none";
   bar.style.width = "100%";
   progressEl.setAttribute("aria-valuenow", "100");
-  progressLabel.textContent = "100% · file recovered";
+  progressLabel.textContent = `100% · ${transferMode === "note" ? "note" : "file"} recovered`;
   etaLabel.textContent = `${formatDuration(seconds)} total`;
   try {
     if (!hashOk) throw new Error("The optical stream checksum did not match.");
+    if (transferMode === "note") {
+      const { note, file } = await unpackPrivateNote(container);
+      const stored = storeReceivedNote(localStorage, note);
+      const rate = (container.length / 1024 / seconds).toFixed(1);
+      stats.textContent =
+        `${stored.added ? "note saved" : "note already saved"} · ${seconds.toFixed(1)} s · ` +
+        `${rate} KB/s · ${file.compression === "gzip" ? "gzip · " : ""}SHA-256 verified ✓`;
+      renderStoredNotes();
+      showReceivedNote(note.text, stored.added);
+      return;
+    }
     const file = await unpackFile(container);
     if (!(await verifyFile(file))) throw new Error("The recovered file failed SHA-256 verification.");
 
@@ -224,9 +255,81 @@ async function finish(container: Uint8Array, hashOk: boolean, seconds: number) {
     }
   } catch (error) {
     bar.classList.add("error");
-    etaLabel.textContent = "Verification failed";
+    etaLabel.textContent = "Transfer failed";
     stats.textContent = `✗ ${error instanceof Error ? error.message : String(error)}`;
   }
+}
+
+function showReceivedNote(text: string, added: boolean) {
+  const heading = document.createElement("div");
+  heading.className = "done";
+  heading.textContent = added ? "Note saved" : "Note already saved";
+  const previewText = document.createElement("p");
+  previewText.className = "received-note";
+  previewText.textContent = text;
+  const another = document.createElement("button");
+  another.className = "secondary-button";
+  another.type = "button";
+  another.textContent = "Receive another note";
+  another.addEventListener("click", () => window.location.reload());
+  result.replaceChildren(heading, previewText, another);
+}
+
+function formatNoteTime(timestamp: number): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(timestamp));
+}
+
+function renderStoredNotes() {
+  if (!notesList || !notesEmpty) return;
+  const notes = loadStoredNotes(localStorage);
+  notesEmpty.style.display = notes.length === 0 ? "block" : "none";
+  if (clearNotesBtn) clearNotesBtn.disabled = notes.length === 0;
+  notesList.replaceChildren(...notes.map(renderStoredNote));
+}
+
+function renderStoredNote(note: StoredNote): HTMLElement {
+  const card = document.createElement("article");
+  card.className = "note-card";
+
+  const meta = document.createElement("div");
+  meta.className = "note-meta";
+  const time = document.createElement("time");
+  time.dateTime = new Date(note.receivedAt).toISOString();
+  time.textContent = `Received ${formatNoteTime(note.receivedAt)}`;
+  meta.append(time);
+
+  const text = document.createElement("p");
+  text.textContent = note.text;
+
+  const actions = document.createElement("div");
+  actions.className = "note-actions";
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.className = "text-button";
+  copy.textContent = "Copy";
+  copy.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(note.text);
+      copy.textContent = "Copied";
+      setTimeout(() => { copy.textContent = "Copy"; }, 1500);
+    } catch {
+      copy.textContent = "Copy failed";
+    }
+  });
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "text-button danger";
+  remove.textContent = "Delete";
+  remove.addEventListener("click", () => {
+    deleteStoredNote(localStorage, note.id);
+    renderStoredNotes();
+  });
+  actions.append(copy, remove);
+  card.append(meta, text, actions);
+  return card;
 }
 
 function updateStats() {

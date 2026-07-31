@@ -1,4 +1,4 @@
-# Decimen Optical Transfer: fountain-coded QR file transfer
+# Decimen Optical Transfer: fountain-coded QR file and note transfer
 
 Send a file between two devices using nothing but a **screen and a camera**.
 One page displays the file as an endless stream of animated QR codes; another
@@ -12,6 +12,8 @@ multi-code grids, and an error-corrected color channel. This version accepts
 arbitrary files up to 64 MB, preserves their filename and media type inside
 the fountain stream, adaptively uses gzip only when it shrinks the optical
 payload, and verifies SHA-256 before offering the received file for download.
+It also has a separate private-note flow: received notes are verified,
+deduplicated, and kept only in that browser's local storage.
 
 <p align="center">
   <img src="docs/receiving.jpg" width="420"
@@ -34,6 +36,9 @@ npm run dev
   tap **Start camera**, and point it at the code.
 - When recovery completes, save the received file after its SHA-256 check
   passes.
+- For text, use `https://localhost:5173/notes/send/` and open
+  `/notes/receive/` on the other device. Received notes appear in a local
+  message panel and never leave that browser unless you copy or delete them.
 
 **Why the dev server is https-only:** the receiver uses `getUserMedia`, and
 browsers remove that API entirely on insecure origins: a phone reaching

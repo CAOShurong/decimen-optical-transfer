@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "license": "MIT",
-  "description": "Proof of concept: file transfer between two devices using fountain-coded animated QR codes — screen to camera, no network.",
+  "description": "Offline file and private-note transfer using fountain-coded animated QR codes — screen to camera, no network.",
   "type": "module",
   "scripts": {
     "dev": "vite",

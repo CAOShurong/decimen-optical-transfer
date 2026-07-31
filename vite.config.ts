@@ -16,6 +16,8 @@ export default defineConfig({
         index: resolve(__dirname, "index.html"),
         send: resolve(__dirname, "send/index.html"),
         receive: resolve(__dirname, "receive/index.html"),
+        noteSend: resolve(__dirname, "notes/send/index.html"),
+        noteReceive: resolve(__dirname, "notes/receive/index.html"),
       },
     },
   },

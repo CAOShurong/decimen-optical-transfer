@@ -14,6 +14,7 @@
 
 import QRCode from "qrcode";
 import { LTEncoder } from "../shared/fountain";
+import { packPrivateNote } from "../shared/notes";
 import {
   HEADER_LEN,
   MAX_FILE_BYTES,
@@ -29,7 +30,10 @@ const LOOKAHEAD = 3;
 const canvas = document.getElementById("qr") as HTMLCanvasElement;
 const stage = document.getElementById("stage") as HTMLDivElement;
 const specs = document.getElementById("specs")!;
-const cfgFile = document.getElementById("cfg-file") as HTMLInputElement;
+const transferMode = document.body.dataset.transferMode === "note" ? "note" : "file";
+const cfgFile = document.getElementById("cfg-file") as HTMLInputElement | null;
+const noteText = document.getElementById("note-text") as HTMLTextAreaElement | null;
+const sendNoteBtn = document.getElementById("send-note") as HTMLButtonElement | null;
 const cfgFps = document.getElementById("cfg-fps") as HTMLSelectElement;
 const cfgBytes = document.getElementById("cfg-bytes") as HTMLSelectElement;
 const cfgEcc = document.getElementById("cfg-ecc") as HTMLSelectElement;
@@ -51,7 +55,7 @@ function formatBytes(bytes: number): string {
 }
 
 async function selectFile(): Promise<void> {
-  const file = cfgFile.files?.[0];
+  const file = cfgFile?.files?.[0];
   if (!file) return;
   const selectionGeneration = ++generation;
   selectedFile = null;
@@ -79,8 +83,31 @@ async function selectFile(): Promise<void> {
   }
 }
 
+async function selectNote(): Promise<void> {
+  if (!noteText) return;
+  const selectionGeneration = ++generation;
+  selectedFile = null;
+  stage.hidden = true;
+  specs.textContent = "preparing private note…";
+  try {
+    const { note, packed } = await packPrivateNote(noteText.value);
+    if (selectionGeneration !== generation) return;
+    selectedFile = {
+      name: "Private note",
+      size: new TextEncoder().encode(note.text).length,
+      payload: packed.container,
+      compression: packed.compression,
+      transmittedSize: packed.transmittedSize,
+    };
+    await startStream();
+  } catch (error) {
+    specs.textContent = `✗ ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
 async function main() {
-  cfgFile.addEventListener("change", () => void selectFile());
+  cfgFile?.addEventListener("change", () => void selectFile());
+  sendNoteBtn?.addEventListener("click", () => void selectNote());
   for (const el of [cfgFps, cfgBytes, cfgEcc, cfgSize]) {
     el.addEventListener("change", () => void startStream());
   }
@@ -95,7 +122,7 @@ async function main() {
 async function startStream() {
   const gen = ++generation;
   if (!selectedFile) {
-    specs.textContent = "choose a file to begin";
+    specs.textContent = transferMode === "note" ? "write a note to begin" : "choose a file to begin";
     return;
   }
   const { name, size: fileSize, payload, compression, transmittedSize } = selectedFile;

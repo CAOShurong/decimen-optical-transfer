@@ -4,18 +4,23 @@ import { estimateTransferProgress, formatDuration } from "../shared/progress.ts"
 
 test("progress and ETA follow the observed unique-frame rate", () => {
   const progress = estimateTransferProgress(100, 50, 10);
-  assert.equal(progress.minimumFrames, 100);
-  assert.equal(progress.fraction, 0.5);
-  assert.equal(progress.etaSeconds, 10);
-  assert.equal(progress.finishing, false);
+  assert.equal(progress.expectedFrames, 118);
+  assert.equal(progress.fraction, 0.43);
+  assert.equal(progress.etaSeconds, 13.6);
+  assert.equal(progress.phase, "collecting");
 });
 
-test("ETA waits for enough samples and progress holds at 99% after K", () => {
+test("progress keeps moving through redundant frames", () => {
   assert.equal(estimateTransferProgress(100, 2, 4).etaSeconds, undefined);
-  const finishing = estimateTransferProgress(100, 100, 20);
-  assert.equal(finishing.fraction, 0.99);
-  assert.equal(finishing.finishing, true);
-  assert.equal(estimateTransferProgress(100, 118, 22).fraction, 0.99);
+  assert.equal(estimateTransferProgress(100, 100, 20).fraction, 0.86);
+  assert.ok(estimateTransferProgress(100, 110, 21).fraction > 0.91);
+  assert.equal(estimateTransferProgress(100, 118, 22).fraction, 0.96);
+  assert.ok(estimateTransferProgress(100, 136, 24).fraction > 0.97);
+});
+
+test("decoded blocks can advance progress and completion caps at 99%", () => {
+  assert.equal(estimateTransferProgress(100, 105, 20, 95).fraction, 0.9405);
+  assert.equal(estimateTransferProgress(100, 105, 20, 100).fraction, 0.99);
 });
 
 test("durations stay compact and readable", () => {

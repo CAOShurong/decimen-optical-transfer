@@ -95,8 +95,9 @@ mean dropped frames, which the fountain happily absorbs.
 - **Progress bars must track frames collected, not blocks solved.** LT
   peeling back-loads its solve cascade: block-count progress looks stalled
   for most of the transfer, then teleports to 100%. The receiver estimates
-  remaining time from its observed unique-frame rate, fills toward the hard
-  minimum of K frames, then holds at 99% until decoding actually completes.
+  remaining time from its observed unique-frame rate. A hybrid of incoming
+  frames and actually decoded blocks keeps the bar moving through redundancy;
+  only verified completion reaches 100%.
 - **QR error correction is set to the minimum (L).** In-frame ECC and the
   fountain layer solve different problems (corruption vs erasure), but at
   these frame sizes level L plus frame disposal is the better trade.

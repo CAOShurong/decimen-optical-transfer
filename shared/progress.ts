@@ -2,28 +2,47 @@ export const EXPECTED_FOUNTAIN_OVERHEAD = 1.18;
 
 export interface TransferProgressEstimate {
   fraction: number;
-  minimumFrames: number;
+  expectedFrames: number;
   etaSeconds?: number;
-  finishing: boolean;
+  phase: "collecting" | "decoding";
 }
 
 export function estimateTransferProgress(
   sourceBlocks: number,
   uniqueFrames: number,
   elapsedSeconds: number,
+  solvedBlocks = 0,
 ): TransferProgressEstimate {
-  // K source blocks is the only hard milestone: recovery cannot complete
-  // before K independent frames, but fountain overhead varies per stream.
-  // Fill toward K, then hold at 99% until the decoder actually completes.
   const minimumFrames = Math.max(1, sourceBlocks);
-  const finishing = uniqueFrames >= minimumFrames;
-  const fraction = finishing ? 0.99 : Math.min(0.99, uniqueFrames / minimumFrames);
+  const expectedFrames = Math.max(
+    minimumFrames + 1,
+    Math.ceil(minimumFrames * EXPECTED_FOUNTAIN_OVERHEAD),
+  );
+  const expectedRedundancy = expectedFrames - minimumFrames;
+
+  // Frames drive a continuously moving baseline: 0–86% while collecting the
+  // theoretical minimum, 86–96% through the expected redundancy, then an
+  // asymptotic 96–99% if this particular stream needs more. Actual decoded
+  // blocks can move the bar further ahead at any time.
+  let frameFraction: number;
+  if (uniqueFrames < minimumFrames) {
+    frameFraction = 0.86 * (uniqueFrames / minimumFrames);
+  } else if (uniqueFrames <= expectedFrames) {
+    frameFraction =
+      0.86 + 0.1 * ((uniqueFrames - minimumFrames) / expectedRedundancy);
+  } else {
+    const extra = (uniqueFrames - expectedFrames) / expectedRedundancy;
+    frameFraction = 0.96 + 0.03 * (1 - Math.exp(-extra));
+  }
+  const decodedFraction = 0.99 * Math.min(1, solvedBlocks / minimumFrames);
+  const fraction = Math.min(0.99, Math.max(frameFraction, decodedFraction));
+  const phase = uniqueFrames < minimumFrames ? "collecting" : "decoding";
   const rate = elapsedSeconds > 0 ? uniqueFrames / elapsedSeconds : 0;
   const etaSeconds =
-    uniqueFrames >= 3 && elapsedSeconds >= 1 && rate > 0 && !finishing
-      ? (minimumFrames - uniqueFrames) / rate
+    uniqueFrames >= 3 && elapsedSeconds >= 1 && rate > 0 && uniqueFrames < expectedFrames
+      ? (expectedFrames - uniqueFrames) / rate
       : undefined;
-  return { fraction, minimumFrames, etaSeconds, finishing };
+  return { fraction, expectedFrames, etaSeconds, phase };
 }
 
 export function formatDuration(seconds: number): string {

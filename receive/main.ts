@@ -192,17 +192,23 @@ function onDecoded(bytes: Uint8Array) {
 function updateProgressEstimate() {
   if (!decoder) return;
   const elapsed = Math.max(0, (performance.now() - startTs) / 1000);
-  const estimate = estimateTransferProgress(decoder.k, decoder.framesNew, elapsed);
+  const estimate = estimateTransferProgress(
+    decoder.k,
+    decoder.framesNew,
+    elapsed,
+    decoder.solvedCount,
+  );
   const percent = estimate.fraction * 100;
   const shownPercent = percent < 10 ? percent.toFixed(1) : percent.toFixed(0);
   bar.style.width = `${percent.toFixed(1)}%`;
   progressEl.setAttribute("aria-valuenow", String(Math.floor(percent)));
-  progressLabel.textContent = `${shownPercent}% · ${decoder.framesNew} unique frames`;
-  etaLabel.textContent = estimate.finishing
-    ? "Finishing recovery…"
-    : estimate.etaSeconds === undefined
-      ? "Estimating time…"
-      : `About ${formatDuration(estimate.etaSeconds)} remaining`;
+  progressLabel.textContent =
+    `${shownPercent}% · ${decoder.solvedCount}/${decoder.k} blocks`;
+  etaLabel.textContent = estimate.etaSeconds === undefined
+    ? estimate.phase === "decoding"
+      ? `${decoder.framesNew} frames · decoding`
+      : "Estimating time…"
+    : `About ${formatDuration(estimate.etaSeconds)} · ${decoder.framesNew} frames`;
 }
 
 async function finish(container: Uint8Array, hashOk: boolean, seconds: number) {

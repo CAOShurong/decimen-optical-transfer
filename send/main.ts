@@ -15,7 +15,7 @@
 import QRCode from "qrcode";
 import { fitQrDisplaySize } from "../shared/display";
 import { LTEncoder } from "../shared/fountain";
-import { packPrivateNote } from "../shared/notes";
+import { MAX_SNIPPET_BYTES, MAX_SNIPPET_LABEL, packSnippet } from "../shared/snippet";
 import {
   HEADER_LEN,
   MAX_FILE_BYTES,
@@ -28,13 +28,23 @@ import {
 const MARGIN = 4; // quiet-zone modules
 const LOOKAHEAD = 3;
 
+// `npm run demo` (vite --mode demo). Locks the sender to the two bundled
+// payloads so the app can be left running in front of strangers without
+// handing them a file picker into the host machine.
+const DEMO = import.meta.env.VITE_DEMO === "1";
+
 const canvas = document.getElementById("qr") as HTMLCanvasElement;
 const stage = document.getElementById("stage") as HTMLDivElement;
 const specs = document.getElementById("specs")!;
-const transferMode = document.body.dataset.transferMode === "note" ? "note" : "file";
-const cfgFile = document.getElementById("cfg-file") as HTMLInputElement | null;
-const noteText = document.getElementById("note-text") as HTMLTextAreaElement | null;
-const sendNoteBtn = document.getElementById("send-note") as HTMLButtonElement | null;
+const cfgFile = document.getElementById("cfg-file") as HTMLInputElement;
+const snippetText = document.getElementById("snippet-text") as HTMLTextAreaElement;
+const snippetLabel = document.getElementById("snippet-label")!;
+const sendSnippetBtn = document.getElementById("send-snippet") as HTMLButtonElement;
+const paneFile = document.getElementById("pane-file")!;
+const paneSnippet = document.getElementById("pane-snippet")!;
+const paneDemo = document.getElementById("pane-demo")!;
+const modePicker = document.getElementById("mode-picker")!;
+const modeInputs = [...document.querySelectorAll<HTMLInputElement>('input[name="send-mode"]')];
 const cfgFps = document.getElementById("cfg-fps") as HTMLSelectElement;
 const cfgBytes = document.getElementById("cfg-bytes") as HTMLSelectElement;
 const cfgEcc = document.getElementById("cfg-ecc") as HTMLSelectElement;
@@ -56,8 +66,63 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function currentMode(): "file" | "snippet" {
+  return modeInputs.find((input) => input.checked)?.value === "snippet" ? "snippet" : "file";
+}
+
+/** Switching what we're sending kills any stream in flight and clears the stage. */
+function applyMode(): void {
+  generation++;
+  selectedFile = null;
+  stage.hidden = true;
+
+  if (DEMO) {
+    modePicker.hidden = true;
+    paneFile.hidden = true;
+    paneSnippet.hidden = true;
+    paneDemo.hidden = false;
+    specs.textContent = "Choose a demo payload to begin";
+    return;
+  }
+
+  const mode = currentMode();
+  paneDemo.hidden = true;
+  paneFile.hidden = mode !== "file";
+  paneSnippet.hidden = mode !== "snippet";
+  specs.textContent =
+    mode === "snippet" ? "Paste or type some text to begin" : "Choose a file to begin";
+  // A file left in the picker survives the switch, so re-arm it rather than
+  // leaving a filename on screen next to "choose a file to begin".
+  if (mode === "file" && cfgFile.files?.[0]) void selectFile();
+}
+
+/** Demo payloads ship in public/, so they sit at the site root beside /send/. */
+async function selectDemo(fileName: string): Promise<void> {
+  const selectionGeneration = ++generation;
+  selectedFile = null;
+  stage.hidden = true;
+  specs.textContent = `loading ${fileName}…`;
+  try {
+    const response = await fetch(`../${fileName}`);
+    if (!response.ok) throw new Error(`could not load ${fileName} (${response.status})`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const packed = await packFile(fileName, "image/png", bytes);
+    if (selectionGeneration !== generation) return;
+    selectedFile = {
+      name: fileName,
+      size: bytes.length,
+      payload: packed.container,
+      compression: packed.compression,
+      transmittedSize: packed.transmittedSize,
+    };
+    await startStream(true);
+  } catch (error) {
+    specs.textContent = `✗ ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
 async function selectFile(): Promise<void> {
-  const file = cfgFile?.files?.[0];
+  const file = cfgFile.files?.[0];
   if (!file) return;
   const selectionGeneration = ++generation;
   selectedFile = null;
@@ -79,37 +144,51 @@ async function selectFile(): Promise<void> {
       compression: packed.compression,
       transmittedSize: packed.transmittedSize,
     };
-    await startStream();
+    await startStream(true);
   } catch (error) {
     specs.textContent = `✗ ${error instanceof Error ? error.message : String(error)}`;
   }
 }
 
-async function selectNote(): Promise<void> {
-  if (!noteText) return;
+async function selectSnippet(): Promise<void> {
   const selectionGeneration = ++generation;
   selectedFile = null;
   stage.hidden = true;
-  specs.textContent = "preparing private note…";
+  specs.textContent = "preparing text snippet…";
   try {
-    const { note, packed } = await packPrivateNote(noteText.value);
+    const packed = await packSnippet(snippetText.value);
     if (selectionGeneration !== generation) return;
     selectedFile = {
-      name: "Private note",
-      size: new TextEncoder().encode(note.text).length,
+      name: "Text snippet",
+      size: packed.originalSize,
       payload: packed.container,
       compression: packed.compression,
       transmittedSize: packed.transmittedSize,
     };
-    await startStream();
+    await startStream(true);
   } catch (error) {
     specs.textContent = `✗ ${error instanceof Error ? error.message : String(error)}`;
   }
 }
 
 async function main() {
-  cfgFile?.addEventListener("change", () => void selectFile());
-  sendNoteBtn?.addEventListener("click", () => void selectNote());
+  // Both bounds come from MAX_SNIPPET_BYTES so they can't drift apart. maxLength
+  // counts UTF-16 units and the real check counts UTF-8 bytes, which are never
+  // fewer — so this is a loose guard and packSnippet() remains authoritative.
+  snippetText.maxLength = MAX_SNIPPET_BYTES;
+  snippetLabel.textContent = `Text to send · up to ${MAX_SNIPPET_LABEL}`;
+
+  if (DEMO) {
+    document.querySelector(".mode-badge")!.textContent = "Demo";
+    for (const button of document.querySelectorAll<HTMLButtonElement>("[data-demo]")) {
+      button.addEventListener("click", () => void selectDemo(button.dataset.demo!));
+    }
+  } else {
+    cfgFile.addEventListener("change", () => void selectFile());
+    sendSnippetBtn.addEventListener("click", () => void selectSnippet());
+    for (const input of modeInputs) input.addEventListener("change", applyMode);
+  }
+  applyMode();
   window.addEventListener("resize", () => resizeDisplay?.());
   for (const el of [cfgFps, cfgBytes, cfgEcc, cfgSize]) {
     el.addEventListener("change", () => void startStream());
@@ -122,11 +201,21 @@ async function main() {
   }
 }
 
-async function startStream() {
+/** Only on a fresh pick — a settings change restarts the stream too, and
+ *  yanking the page down every time you nudge tx fps is worse than useless. */
+function scrollStageIntoView() {
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  requestAnimationFrame(() => {
+    stage.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+  });
+}
+
+async function startStream(revealStage = false) {
   const gen = ++generation;
   resizeDisplay = null;
   if (!selectedFile) {
-    specs.textContent = transferMode === "note" ? "write a note to begin" : "choose a file to begin";
+    specs.textContent =
+      currentMode() === "snippet" ? "Paste or type some text to begin" : "Choose a file to begin";
     return;
   }
   const { name, size: fileSize, payload, compression, transmittedSize } = selectedFile;
@@ -200,6 +289,9 @@ async function startStream() {
       modules = qr.modules.size;
       sizeCanvas();
       resizeDisplay = sizeCanvas;
+      // Scroll only now: before sizeCanvas() the canvas is still 16×16, so the
+      // scroll target would be the wrong height.
+      if (revealStage) scrollStageIntoView();
       specs.textContent =
         `${txFps} FPS · ${frameBytes} bytes per frame · V${version} · ECC ${ecc} · ` +
         `${name} · ${formatBytes(fileSize)} · ` +

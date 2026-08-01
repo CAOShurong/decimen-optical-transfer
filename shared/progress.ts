@@ -38,9 +38,21 @@ export function estimateTransferProgress(
   const fraction = Math.min(0.99, Math.max(frameFraction, decodedFraction));
   const phase = uniqueFrames < minimumFrames ? "collecting" : "decoding";
   const rate = elapsedSeconds > 0 ? uniqueFrames / elapsedSeconds : 0;
+
+  // Past the expected frame count the stream is running long — poor light,
+  // motion blur, a camera that won't hold focus. That is exactly when someone
+  // is staring at the bar wondering whether it has stalled, so keep quoting a
+  // time instead of going silent: extend the target one redundancy block at a
+  // time. The estimate steps up when a step is missed, which is honest about
+  // the transfer taking longer than the fountain's nominal overhead predicts.
+  const overshoot = uniqueFrames - expectedFrames;
+  const target =
+    overshoot < 0
+      ? expectedFrames
+      : expectedFrames + expectedRedundancy * (Math.floor(overshoot / expectedRedundancy) + 1);
   const etaSeconds =
-    uniqueFrames >= 3 && elapsedSeconds >= 1 && rate > 0 && uniqueFrames < expectedFrames
-      ? (expectedFrames - uniqueFrames) / rate
+    uniqueFrames >= 3 && elapsedSeconds >= 1 && rate > 0
+      ? (target - uniqueFrames) / rate
       : undefined;
   return { fraction, expectedFrames, etaSeconds, phase };
 }

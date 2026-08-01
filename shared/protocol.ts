@@ -1,5 +1,3 @@
-import { gzip, gunzip } from "fflate";
-
 // Frame protocol: every QR frame is fully self-describing, so there is NO
 // handshake — the receiver locks onto a stream mid-flight, and a new session
 // id on any frame simply starts a fresh transfer.
@@ -46,22 +44,46 @@ async function digest(bytes: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await crypto.subtle.digest("SHA-256", stableBytes));
 }
 
-function gzipAsync(bytes: Uint8Array): Promise<Uint8Array> {
-  return new Promise((resolve, reject) => {
-    gzip(bytes, { level: 9, mem: 12, mtime: 0 }, (error, compressed) => {
-      if (error) reject(error);
-      else resolve(compressed);
-    });
-  });
+async function gzipAsync(bytes: Uint8Array): Promise<Uint8Array> {
+  const compressed = new Blob([bytes as BlobPart])
+    .stream()
+    .pipeThrough(new CompressionStream("gzip"));
+  return new Uint8Array(await new Response(compressed).arrayBuffer());
 }
 
-function gunzipAsync(bytes: Uint8Array): Promise<Uint8Array> {
-  return new Promise((resolve, reject) => {
-    gunzip(bytes, (error, decompressed) => {
-      if (error) reject(error);
-      else resolve(decompressed);
-    });
-  });
+/**
+ * Inflate with a hard output ceiling.
+ *
+ * The gzip trailer's declared size is attacker-controlled — it arrives over the
+ * optical channel like everything else — so it is a hint, never a bound. This
+ * counts bytes as they come off the stream and aborts the moment they exceed
+ * `maxBytes`, which the caller has already clamped to MAX_FILE_BYTES. Without
+ * this an 80 KB stream could claim to be small and inflate to gigabytes.
+ */
+async function gunzipAsync(bytes: Uint8Array, maxBytes: number): Promise<Uint8Array> {
+  const inflated = new Blob([bytes as BlobPart])
+    .stream()
+    .pipeThrough(new DecompressionStream("gzip"));
+  const reader = inflated.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.length;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw new Error("The recovered file expands past its declared length.");
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
 }
 
 export async function packFile(
@@ -147,7 +169,7 @@ export async function unpackFile(container: Uint8Array): Promise<OpticalFile> {
       throw new Error("The gzip payload length does not match its file header.");
     }
   }
-  const bytes = compression === "gzip" ? await gunzipAsync(transmitted) : transmitted;
+  const bytes = compression === "gzip" ? await gunzipAsync(transmitted, fileLength) : transmitted;
   if (bytes.length !== fileLength) {
     throw new Error("The decompressed file length does not match its header.");
   }

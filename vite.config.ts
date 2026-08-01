@@ -16,10 +16,11 @@ export default defineConfig({
         index: resolve(__dirname, "index.html"),
         send: resolve(__dirname, "send/index.html"),
         receive: resolve(__dirname, "receive/index.html"),
-        noteSend: resolve(__dirname, "notes/send/index.html"),
-        noteReceive: resolve(__dirname, "notes/receive/index.html"),
       },
     },
   },
+  // host: true on both so a phone on the LAN can reach either the dev server
+  // or the built bundle that `npm run serve` previews.
   server: { host: true },
+  preview: { host: true },
 });

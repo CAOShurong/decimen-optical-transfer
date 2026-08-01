@@ -9,34 +9,20 @@
     <title>Optical Transfer — receive</title>
     <link rel="stylesheet" href="../shared/style.css" />
   </head>
-  <body class="receiver-page" data-transfer-mode="file">
+  <body class="receiver-page">
     <header class="site-header">
       <a class="brand" href="../">DECIMEN</a>
-      <span class="mode-badge">Receive file</span>
+      <span class="mode-badge">Receive</span>
     </header>
     <main class="receiver-shell">
       <section class="receiver-primary">
         <div class="receiver-heading">
           <div>
             <p class="eyebrow">Camera → device</p>
-            <h1>Receive a file</h1>
+            <h1>Receive</h1>
           </div>
-          <div class="hint status-line" id="stats">Ready to scan a file stream</div>
+          <div class="hint status-line" id="stats">Ready to scan a file or text stream</div>
         </div>
-        <details class="settings" id="settings">
-          <summary>Camera settings</summary>
-          <div class="row">
-            <label>capture width
-              <select id="cfg-width"><option>960</option><option selected>1280</option><option>1920</option></select>
-            </label>
-            <label>capture fps
-              <select id="cfg-capfps"><option>30</option><option selected>60</option></select>
-            </label>
-            <label>decode workers
-              <select id="cfg-workers"><option>1</option><option selected>2</option><option>3</option></select>
-            </label>
-          </div>
-        </details>
         <button id="start">Start camera</button>
         <div class="preview" id="preview" style="display: none">
           <video id="video" muted playsinline></video>
@@ -50,7 +36,7 @@
               id="progress"
               style="display: none"
               role="progressbar"
-              aria-label="File recovery progress"
+              aria-label="Transfer recovery progress"
               aria-valuemin="0"
               aria-valuemax="100"
               aria-valuenow="0"
@@ -70,6 +56,21 @@
             <div class="metric"><div class="k">block len</div><div class="v" id="m-block">—</div></div>
             <div class="metric"><div class="k">transfer</div><div class="v" id="m-payload">—</div></div>
           </div>
+        </details>
+        <details class="settings" id="settings">
+          <summary>Receive settings</summary>
+          <div class="row">
+            <label>capture width
+              <select id="cfg-width"><option>960</option><option selected>1280</option><option>1920</option></select>
+            </label>
+            <label>capture fps
+              <select id="cfg-capfps"><option>30</option><option selected>60</option></select>
+            </label>
+            <label>decode workers
+              <select id="cfg-workers"><option>1</option><option selected>2</option><option>3</option></select>
+            </label>
+          </div>
+          <p class="hint settings-actual" id="camera-actual">Applied when the camera starts.</p>
         </details>
       </section>
     </main>

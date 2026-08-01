@@ -1,4 +1,4 @@
-# Decimen Optical Transfer: fountain-coded QR file and note transfer
+# Decimen Optical Transfer: fountain-coded QR file transfer
 
 Send a file between two devices using nothing but a **screen and a camera**.
 One page displays the file as an endless stream of animated QR codes; another
@@ -12,8 +12,8 @@ multi-code grids, and an error-corrected color channel. This version accepts
 arbitrary files up to 64 MB, preserves their filename and media type inside
 the fountain stream, adaptively uses gzip only when it shrinks the optical
 payload, and verifies SHA-256 before offering the received file for download.
-It also has a separate private-note flow: received notes are verified,
-deduplicated, and kept only in that browser's local storage.
+The sender can also stream a pasted text snippet instead of a file; the
+receiver works out which one is arriving from the container's media type.
 
 <p align="center">
   <img src="docs/receiving.jpg" width="420"
@@ -25,8 +25,16 @@ deduplicated, and kept only in that browser's local storage.
 
 ```bash
 npm install
-npm run dev
+npm run dev     # dev server with HMR
+npm run serve   # build, then serve the production bundle
+npm run demo    # demo mode: only the bundled payloads can be sent
 ```
+
+`npm run demo` locks the sender to the two bundled images — no file picker, no
+text box. Use it when the sending machine is going to sit unattended in front
+of people, so nobody can browse the host's filesystem through the picker. The
+lock is compiled in: the demo branch is the only sender code in that bundle,
+and a normal build tree-shakes it away entirely.
 
 - On the **sending** device (a laptop is ideal): open
   `https://localhost:5173/send/`, choose a file, and it starts streaming. Max
@@ -36,9 +44,14 @@ npm run dev
   tap **Start camera**, and point it at the code.
 - When recovery completes, save the received file after its SHA-256 check
   passes.
-- For text, use `https://localhost:5173/notes/send/` and open
-  `/notes/receive/` on the other device. Received notes appear in a local
-  message panel and never leave that browser unless you copy or delete them.
+- To send text instead, flip the sender to **Text snippet** and paste into the
+  box. The receiver is the same page either way — nothing is stored, the text
+  is shown with a copy button and is gone when you close the tab.
+
+Neither mode is encrypted: whatever is on the sending screen is readable by
+any camera pointed at it. The property this gives you is no network, not
+confidentiality.
+
 
 **Why the dev server is https-only:** the receiver uses `getUserMedia`, and
 browsers remove that API entirely on insecure origins: a phone reaching
@@ -112,8 +125,12 @@ capture fps, and decode worker count, applied when the camera starts.
 
 | setting | default | notes |
 |---|---|---|
-| tx fps | 24 | each frame must own at least 2 refresh cycles of the display |
-| bytes / frame | 1465 (QR v27) | denser is faster if the receiver still decodes it; 2953 (v40) works phone-to-phone at close range |
+| tx fps | 60 | tuned for goodput on a 120 Hz sender; on a 60 Hz screen each frame owns a single refresh, so drop to 24–30 if the receiver stalls |
+| bytes / frame | 2953 (QR v40) | the density ceiling. Great phone-to-phone at close range; back off to 1465 (v27) for arbitrary monitors or a distant camera |
+
+The defaults are set for the best-case demo rather than the safest handshake.
+If a transfer crawls, the two things to try first are dropping bytes/frame to
+1465 and tx fps to 24.
 
 The parent experiment's measured ceiling with this exact architecture plus
 denser frames, a 120 fps ProMotion sender, and stacked codes: ~128 KB/s

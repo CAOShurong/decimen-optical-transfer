@@ -12,5 +12,5 @@
     "skipLibCheck": true,
     "types": ["vite/client"]
   },
-  "include": ["shared", "send", "receive", "notes"]
+  "include": ["shared", "send", "receive"]
 }

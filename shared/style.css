@@ -47,6 +47,11 @@ button {
   font-weight: 700;
   cursor: pointer;
 }
+/* Author `display` rules beat the UA sheet's [hidden], so restate it. */
+[hidden] {
+  display: none !important;
+}
+
 .file-picker {
   width: min(92vw, 640px);
   display: flex;
@@ -191,6 +196,14 @@ details.settings input[type="range"] {
   border: 1px solid #2e2718;
   border-radius: 6px;
   padding: 5px 8px;
+}
+.settings-actual {
+  margin: 10px 0 2px;
+  padding-top: 9px;
+  border-top: 1px solid #2e2718;
+  color: #9a8f76;
+  font-size: 11px;
+  letter-spacing: 0.04em;
 }
 .metrics {
   display: grid;
@@ -464,13 +477,102 @@ details.settings input[type="range"] {
 .send-shell .status-line,
 .send-shell .file-picker,
 .send-shell details.settings,
+.mode-picker,
 .note-composer {
   width: 100%;
+}
+
+.demo-picker {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  color: var(--amber);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.demo-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.demo-buttons button {
+  width: auto;
+  padding: 10px 16px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--line-bright);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
+.demo-buttons button:hover {
+  border-color: var(--amber);
+}
+
+/* Segmented file/text switch — real radios, so keyboard and AT come free. */
+.mode-picker {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.mode-picker label {
+  flex: 1;
+}
+
+.mode-picker input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mode-picker span {
+  display: block;
+  padding: 9px 12px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: center;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.mode-picker span:hover {
+  color: var(--text);
+}
+
+.mode-picker input:checked + span {
+  color: var(--bg);
+  background: var(--amber);
+}
+
+.mode-picker input:focus-visible + span {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
 }
 
 .send-shell .stage {
   max-width: 100%;
   overflow: hidden;
+  scroll-margin-top: 16px;
 }
 
 .note-composer {
@@ -643,78 +745,11 @@ details.settings input[type="range"] {
   font-size: 14px;
 }
 
-/* Local note storage */
-.notes-receiver-shell {
-  width: min(1100px, calc(100% - 28px));
-  display: grid;
-  grid-template-columns: minmax(0, 640px) minmax(300px, 1fr);
-  gap: 18px;
-  align-items: start;
-}
-
-.notes-panel {
-  min-width: 0;
-  padding: 18px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-}
-
-.notes-panel-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--line);
-}
-
-.notes-panel h2 {
-  margin: 0;
-  color: var(--text);
-  font-size: 22px;
-  letter-spacing: -0.03em;
-}
-
-.notes-empty {
-  margin: 24px 0;
-  color: var(--muted);
-  font-size: 13px;
-  text-align: center;
-}
-
-.notes-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding-top: 14px;
-}
-
-.note-card {
-  padding: 14px;
-  background: var(--bg);
-  border: 1px solid var(--line);
-  border-radius: 9px;
-}
-
-.note-card > p {
-  margin: 10px 0 14px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  color: var(--text);
-  font-size: 14px;
-}
-
-.note-meta {
-  color: var(--muted);
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
 .note-actions {
   display: flex;
-  gap: 14px;
+  align-items: center;
+  gap: 16px;
+  margin-top: 14px;
 }
 
 .text-button {
@@ -731,20 +766,6 @@ details.settings input[type="range"] {
 
 .text-button.danger {
   color: var(--red);
-}
-
-.text-button:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-@media (max-width: 860px) {
-  .notes-receiver-shell {
-    display: block;
-  }
-  .notes-panel {
-    margin-top: 18px;
-  }
 }
 
 @media (max-width: 680px) {
@@ -765,11 +786,38 @@ details.settings input[type="range"] {
   .hero-copy {
     margin-top: 22px;
   }
+  /* Cards stay side by side on phones; everything inside scales to fit. */
   .transfer-grid {
-    grid-template-columns: 1fr;
+    gap: 10px;
   }
   .transfer-card {
-    min-height: 330px;
+    min-height: 0;
+    gap: 16px;
+    padding: 16px 14px;
+    border-radius: 14px;
+  }
+  .card-number {
+    font-size: 11px;
+  }
+  .transfer-card .card-kicker {
+    margin-bottom: 6px;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+  }
+  .transfer-card h2 {
+    margin-bottom: 8px;
+    font-size: clamp(17px, 5vw, 24px);
+  }
+  .transfer-card p:not(.card-kicker) {
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .card-actions .action {
+    min-width: 0;
+    width: 100%;
+    gap: 8px;
+    padding: 10px 12px;
+    font-size: 13px;
   }
   .how-it-works {
     align-items: flex-start;
@@ -785,8 +833,7 @@ details.settings input[type="range"] {
     width: calc(100% - 24px);
     padding-top: 28px;
   }
-  .receiver-shell,
-  .notes-receiver-shell {
+  .receiver-shell {
     width: calc(100% - 20px);
     padding-top: 10px;
   }
@@ -810,9 +857,6 @@ details.settings input[type="range"] {
   }
   .transfer-hud {
     padding: 42px 10px 10px;
-  }
-  .notes-panel {
-    margin-top: 14px;
   }
 }
 

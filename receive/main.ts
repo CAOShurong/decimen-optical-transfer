@@ -14,17 +14,9 @@ import {
   estimateTransferProgress,
   formatDuration,
 } from "../shared/progress";
-import {
-  clearStoredNotes,
-  deleteStoredNote,
-  loadStoredNotes,
-  storeReceivedNote,
-  unpackPrivateNote,
-  type StoredNote,
-} from "../shared/notes";
+import { isSnippet, snippetText } from "../shared/snippet";
 import { fnv1a, parseFrame, unpackFile, verifyFile } from "../shared/protocol";
 
-const transferMode = document.body.dataset.transferMode === "note" ? "note" : "file";
 const startBtn = document.getElementById("start") as HTMLButtonElement;
 const video = document.getElementById("video") as HTMLVideoElement;
 const preview = document.getElementById("preview")!;
@@ -35,12 +27,12 @@ const progressStatus = document.getElementById("progress-status")!;
 const progressLabel = document.getElementById("progress-label")!;
 const etaLabel = document.getElementById("eta-label")!;
 const result = document.getElementById("result")!;
-const settings = document.getElementById("settings") as HTMLDetailsElement;
 const metricsEl = document.getElementById("metrics")!;
 const diagnosticsEl = document.getElementById("diagnostics") as HTMLDetailsElement | null;
-const notesList = document.getElementById("notes-list");
-const notesEmpty = document.getElementById("notes-empty");
-const clearNotesBtn = document.getElementById("clear-notes") as HTMLButtonElement | null;
+const cfgWidth = document.getElementById("cfg-width") as HTMLSelectElement;
+const cfgCapFps = document.getElementById("cfg-capfps") as HTMLSelectElement;
+const cfgWorkers = document.getElementById("cfg-workers") as HTMLSelectElement;
+const cameraActual = document.getElementById("camera-actual")!;
 const metric = (id: string) => document.getElementById(id)!;
 
 let stream: MediaStream | null = null;
@@ -49,6 +41,7 @@ let sessionId = 0;
 let startTs = 0;
 let captureGen = 0;
 let done = false;
+let statsTimer: ReturnType<typeof setInterval> | undefined;
 
 const workers: Worker[] = [];
 const busy: boolean[] = [];
@@ -56,12 +49,6 @@ const captureTimes: number[] = [];
 const decodeTimes: number[] = [];
 
 startBtn.onclick = () => void start();
-clearNotesBtn?.addEventListener("click", () => {
-  if (!window.confirm("Delete every note stored in this browser?")) return;
-  clearStoredNotes(localStorage);
-  renderStoredNotes();
-});
-if (transferMode === "note") renderStoredNotes();
 
 async function start() {
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -72,10 +59,8 @@ async function start() {
       "https to use the camera from another device (npm run dev:https).";
     return;
   }
-  const captureWidth = Number((document.getElementById("cfg-width") as HTMLSelectElement).value);
-  const captureFps = Number((document.getElementById("cfg-capfps") as HTMLSelectElement).value);
-  const workerCount = Number((document.getElementById("cfg-workers") as HTMLSelectElement).value);
-  settings.style.display = "none";
+  const captureWidth = Number(cfgWidth.value);
+  const captureFps = Number(cfgCapFps.value);
   startBtn.style.display = "none";
   preview.style.display = "block";
   metricsEl.style.display = "grid";
@@ -105,9 +90,33 @@ async function start() {
   await video.play().catch(() => undefined);
   stats.textContent = `camera ${stream.getVideoTracks()[0]?.getSettings().width}×${stream.getVideoTracks()[0]?.getSettings().height}@${stream.getVideoTracks()[0]?.getSettings().frameRate} — searching for a stream…`;
 
-  for (let i = 0; i < workerCount; i++) {
+  syncWorkerPool(Number(cfgWorkers.value));
+  reportCameraSettings();
+  for (const el of [cfgWidth, cfgCapFps, cfgWorkers]) {
+    el.addEventListener("change", () => void applyReceiveSettings());
+  }
+
+  captureGen++;
+  scheduleFrame(captureGen);
+  statsTimer = setInterval(updateStats, 500);
+  try {
+    await (navigator as Navigator & { wakeLock?: { request(t: "screen"): Promise<unknown> } })
+      .wakeLock?.request("screen");
+  } catch {
+    /* fine */
+  }
+}
+
+/** Grow or shrink the decode pool in place. Terminating a busy worker just
+ *  drops the frame it held, which the fountain absorbs like any other miss. */
+function syncWorkerPool(count: number) {
+  while (workers.length > count) {
+    workers.pop()!.terminate();
+    busy.pop();
+  }
+  while (workers.length < count) {
+    const slot = workers.length;
     const w = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
-    const slot = i;
     w.onmessage = (e: MessageEvent) => {
       const { id, bytes } = e.data as { id: number; bytes: Uint8Array | null };
       if (id === -1) return; // warm-up
@@ -117,16 +126,42 @@ async function start() {
     workers.push(w);
     busy.push(false);
   }
+}
 
-  captureGen++;
-  scheduleFrame(captureGen);
-  setInterval(updateStats, 500);
+/** Report what the camera actually negotiated — iOS in particular will happily
+ *  hand back 30 fps after accepting a request for 60. */
+function reportCameraSettings() {
+  const track = stream?.getVideoTracks()[0];
+  if (!track) return;
+  const s = track.getSettings();
+  const askedFps = Number(cfgCapFps.value);
+  const gotFps = Math.round(s.frameRate ?? 0);
+  const fpsNote = gotFps && gotFps !== askedFps ? ` (asked ${askedFps})` : "";
+  cameraActual.textContent =
+    `camera ${s.width}×${s.height} @ ${gotFps} fps${fpsNote} · ${workers.length} decode ` +
+    `worker${workers.length === 1 ? "" : "s"} · changes apply live`;
+}
+
+async function applyReceiveSettings() {
+  // finish() has already torn the pool down — don't resurrect it.
+  if (done) return;
+  syncWorkerPool(Number(cfgWorkers.value));
+  const track = stream?.getVideoTracks()[0];
+  if (!track) return;
+  const width = Number(cfgWidth.value);
   try {
-    await (navigator as Navigator & { wakeLock?: { request(t: "screen"): Promise<unknown> } })
-      .wakeLock?.request("screen");
+    await track.applyConstraints({
+      width: { ideal: width },
+      height: { ideal: Math.round((width * 3) / 4) },
+      frameRate: { ideal: Number(cfgCapFps.value) },
+    });
   } catch {
-    /* fine */
+    // Some devices (notably iOS) refuse a live reconfigure. Keep the stream we
+    // have rather than tearing down a transfer in progress.
+    cameraActual.textContent = "this camera refused a live change — restart to apply";
+    return;
   }
+  reportCameraSettings();
 }
 
 type VideoRVFC = HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number };
@@ -204,43 +239,62 @@ function updateProgressEstimate() {
   progressEl.setAttribute("aria-valuenow", String(Math.floor(percent)));
   progressLabel.textContent =
     `${shownPercent}% · ${decoder.solvedCount}/${decoder.k} blocks`;
-  etaLabel.textContent = estimate.etaSeconds === undefined
-    ? estimate.phase === "decoding"
-      ? `${decoder.framesNew} frames · decoding`
-      : "Estimating time…"
-    : `About ${formatDuration(estimate.etaSeconds)} · ${decoder.framesNew} frames`;
+  // Held back for the first few frames — a two-frame sample reads wildly wrong.
+  const rate = decoder.framesNew >= 4 ? ` · ${goodputKbs(elapsed).toFixed(1)} KB/s` : "";
+  etaLabel.textContent =
+    (estimate.etaSeconds === undefined
+      ? estimate.phase === "decoding"
+        ? `${decoder.framesNew} frames · decoding`
+        : "Estimating time…"
+      : `About ${formatDuration(estimate.etaSeconds)} · ${decoder.framesNew} frames`) + rate;
+}
+
+/** Payload KB/s, discounting the ~15% of frames the fountain spends on overhead. */
+function goodputKbs(elapsed: number): number {
+  if (!decoder) return 0;
+  return (
+    (decoder.framesNew * decoder.blockLen) /
+    EXPECTED_FOUNTAIN_OVERHEAD /
+    1024 /
+    Math.max(0.1, elapsed)
+  );
 }
 
 async function finish(container: Uint8Array, hashOk: boolean, seconds: number) {
   done = true;
   captureGen++;
+  // Tear the whole capture pipeline down: the camera, the stats timer, and the
+  // decode pool. Each worker holds its own ~940 KB zxing WASM instance, which
+  // is worth reclaiming on a phone the moment the last frame is in.
   stream?.getTracks().forEach((t) => t.stop());
+  clearInterval(statsTimer);
+  statsTimer = undefined;
+  syncWorkerPool(0);
   preview.style.display = "none";
   bar.style.width = "100%";
   progressEl.setAttribute("aria-valuenow", "100");
-  progressLabel.textContent = `100% · ${transferMode === "note" ? "note" : "file"} recovered`;
   etaLabel.textContent = `${formatDuration(seconds)} total`;
   try {
     if (!hashOk) throw new Error("The optical stream checksum did not match.");
-    if (transferMode === "note") {
-      const { note, file } = await unpackPrivateNote(container);
-      const stored = storeReceivedNote(localStorage, note);
-      const rate = (container.length / 1024 / seconds).toFixed(1);
-      stats.textContent =
-        `${stored.added ? "note saved" : "note already saved"} · ${seconds.toFixed(1)} s · ` +
-        `${rate} KB/s · ${file.compression === "gzip" ? "gzip · " : ""}SHA-256 verified ✓`;
-      renderStoredNotes();
-      showReceivedNote(note.text, stored.added);
-      return;
-    }
     const file = await unpackFile(container);
     if (!(await verifyFile(file))) throw new Error("The recovered file failed SHA-256 verification.");
 
-    const kb = Math.round(file.bytes.length / 1024);
+    // The container carries its own media type, so the receiver never has to be
+    // told in advance whether a file or a text snippet is coming.
     const rate = (container.length / 1024 / seconds).toFixed(1);
+    const gzipNote = file.compression === "gzip" ? "gzip decompressed · " : "";
+    if (isSnippet(file)) {
+      progressLabel.textContent = "100% · text recovered";
+      stats.textContent =
+        `text in ${seconds.toFixed(1)} s · ${rate} KB/s · ${gzipNote}SHA-256 verified ✓`;
+      showSnippet(snippetText(file));
+      return;
+    }
+
+    progressLabel.textContent = "100% · file recovered";
+    const kb = Math.round(file.bytes.length / 1024);
     stats.textContent =
-      `${kb} KB in ${seconds.toFixed(1)} s · ${rate} KB/s · ` +
-      `${file.compression === "gzip" ? "gzip decompressed · " : ""}SHA-256 verified ✓`;
+      `${kb} KB in ${seconds.toFixed(1)} s · ${rate} KB/s · ${gzipNote}SHA-256 verified ✓`;
     const heading = document.createElement("div");
     heading.className = "done";
     heading.textContent = "Transfer Complete!";
@@ -265,49 +319,15 @@ async function finish(container: Uint8Array, hashOk: boolean, seconds: number) {
   }
 }
 
-function showReceivedNote(text: string, added: boolean) {
+/** Nothing is persisted: the text lives here until the page is closed. */
+function showSnippet(text: string) {
   const heading = document.createElement("div");
   heading.className = "done";
-  heading.textContent = added ? "Note saved" : "Note already saved";
-  const previewText = document.createElement("p");
-  previewText.className = "received-note";
-  previewText.textContent = text;
-  const another = document.createElement("button");
-  another.className = "secondary-button";
-  another.type = "button";
-  another.textContent = "Receive another note";
-  another.addEventListener("click", () => window.location.reload());
-  result.replaceChildren(heading, previewText, another);
-}
+  heading.textContent = "Text received";
 
-function formatNoteTime(timestamp: number): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(timestamp));
-}
-
-function renderStoredNotes() {
-  if (!notesList || !notesEmpty) return;
-  const notes = loadStoredNotes(localStorage);
-  notesEmpty.style.display = notes.length === 0 ? "block" : "none";
-  if (clearNotesBtn) clearNotesBtn.disabled = notes.length === 0;
-  notesList.replaceChildren(...notes.map(renderStoredNote));
-}
-
-function renderStoredNote(note: StoredNote): HTMLElement {
-  const card = document.createElement("article");
-  card.className = "note-card";
-
-  const meta = document.createElement("div");
-  meta.className = "note-meta";
-  const time = document.createElement("time");
-  time.dateTime = new Date(note.receivedAt).toISOString();
-  time.textContent = `Received ${formatNoteTime(note.receivedAt)}`;
-  meta.append(time);
-
-  const text = document.createElement("p");
-  text.textContent = note.text;
+  const body = document.createElement("p");
+  body.className = "received-note";
+  body.textContent = text;
 
   const actions = document.createElement("div");
   actions.className = "note-actions";
@@ -317,24 +337,21 @@ function renderStoredNote(note: StoredNote): HTMLElement {
   copy.textContent = "Copy";
   copy.addEventListener("click", async () => {
     try {
-      await navigator.clipboard.writeText(note.text);
+      await navigator.clipboard.writeText(text);
       copy.textContent = "Copied";
       setTimeout(() => { copy.textContent = "Copy"; }, 1500);
     } catch {
       copy.textContent = "Copy failed";
     }
   });
-  const remove = document.createElement("button");
-  remove.type = "button";
-  remove.className = "text-button danger";
-  remove.textContent = "Delete";
-  remove.addEventListener("click", () => {
-    deleteStoredNote(localStorage, note.id);
-    renderStoredNotes();
-  });
-  actions.append(copy, remove);
-  card.append(meta, text, actions);
-  return card;
+  const another = document.createElement("button");
+  another.type = "button";
+  another.className = "secondary-button";
+  another.textContent = "Receive another";
+  another.addEventListener("click", () => window.location.reload());
+  actions.append(copy, another);
+
+  result.replaceChildren(heading, body, actions);
 }
 
 function updateStats() {
@@ -350,12 +367,7 @@ function updateStats() {
   if (!decoder) return;
   const elapsed = (now - startTs) / 1000;
   updateProgressEstimate();
-  const kbs =
-    (decoder.framesNew * decoder.blockLen) /
-    EXPECTED_FOUNTAIN_OVERHEAD /
-    1024 /
-    Math.max(0.1, elapsed);
-  metric("m-rate").textContent = `${kbs.toFixed(1)} KB/s`;
+  metric("m-rate").textContent = `${goodputKbs(elapsed).toFixed(1)} KB/s`;
   metric("m-time").textContent = `${elapsed.toFixed(0)} s`;
   metric("m-frames").textContent = `${decoder.framesNew}/${decoder.framesDup}`;
   metric("m-k").textContent = String(decoder.k);

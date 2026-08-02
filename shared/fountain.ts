@@ -19,8 +19,16 @@ import { splitmix32 } from "./protocol";
 
 const LN2 = 0.6931471805599453;
 
-/** Deterministic natural log: exact-ops range reduction + atanh series. */
-function dlog(x: number): number {
+/**
+ * Deterministic natural log: exact-ops range reduction + atanh series.
+ *
+ * Exported only so tests can pin it. This is wire format, not a utility: it
+ * differs from `Math.log` by up to 1 ulp on roughly a quarter of the inputs
+ * solitonCdf() feeds it, which is enough to shift a CDF entry and flip a
+ * sampled degree. Swapping it for `Math.log` would desync any sender and
+ * receiver that don't share a JS engine. See tests/fountain.test.ts.
+ */
+export function dlog(x: number): number {
   let e = 0;
   let m = x;
   while (m >= 1.5) {
@@ -45,8 +53,9 @@ function dlog(x: number): number {
 const SOLITON_C = 0.1;
 const SOLITON_DELTA = 0.5;
 
-/** Robust-soliton degree CDF for k source blocks. */
-function solitonCdf(k: number): Float64Array {
+/** Robust-soliton degree CDF for k source blocks. Exported for the same
+ *  wire-format pinning reason as dlog() and frameIndices(). */
+export function solitonCdf(k: number): Float64Array {
   const cdf = new Float64Array(k);
   if (k === 1) {
     cdf[0] = 1;
@@ -74,8 +83,20 @@ function frameSeed(sessionId: number, seq: number): number {
   return (h ^ (h >>> 16)) | 0;
 }
 
-/** The block indices XORed into frame `seq` — identical on both ends. */
-function frameIndices(k: number, cdf: Float64Array, sessionId: number, seq: number): number[] {
+/**
+ * The block indices XORed into frame `seq` — identical on both ends.
+ *
+ * Exported for the golden-vector tests. Sender and receiver derive this
+ * independently and never compare notes, so any change here is a breaking
+ * wire-format change: a `decimen-sender.html` someone saved months ago has to
+ * keep agreeing with a current receiver.
+ */
+export function frameIndices(
+  k: number,
+  cdf: Float64Array,
+  sessionId: number,
+  seq: number,
+): number[] {
   const rnd = splitmix32(frameSeed(sessionId, seq));
   // inverse-CDF sample the degree
   const u = rnd() * 2 ** -32;

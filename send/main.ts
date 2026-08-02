@@ -14,16 +14,29 @@
 
 import QRCode from "qrcode";
 import { fitQrDisplaySize } from "../shared/display";
+import { rasterizeQr } from "../shared/qr-raster";
+import { formatBytes } from "../shared/format";
+import {
+  MAX_SOURCE_BLOCKS,
+  blockLength,
+  fitsInOneStream,
+  minimumFrameBytes,
+  smallestSufficientFrameSize,
+  sourceBlockCount,
+} from "../shared/frame-capacity";
 import { LTEncoder } from "../shared/fountain";
 import { MAX_SNIPPET_BYTES, MAX_SNIPPET_LABEL, packSnippet } from "../shared/snippet";
 import {
-  HEADER_LEN,
   MAX_FILE_BYTES,
+  MAX_FILE_LABEL,
   fnv1a,
   packFile,
   packFrame,
   type FrameHeader,
+  type PackedOpticalFile,
 } from "../shared/protocol";
+import { statusLine } from "../shared/status-line";
+import { requestScreenWakeLock } from "../shared/wake-lock";
 
 const MARGIN = 4; // quiet-zone modules
 const LOOKAHEAD = 3;
@@ -37,6 +50,8 @@ const canvas = document.getElementById("qr") as HTMLCanvasElement;
 const stage = document.getElementById("stage") as HTMLDivElement;
 const specs = document.getElementById("specs")!;
 const cfgFile = document.getElementById("cfg-file") as HTMLInputElement;
+const filePickerLabel = document.getElementById("file-picker-label")!;
+const toolTitle = document.getElementById("tool-title")!;
 const snippetText = document.getElementById("snippet-text") as HTMLTextAreaElement;
 const snippetLabel = document.getElementById("snippet-label")!;
 const sendSnippetBtn = document.getElementById("send-snippet") as HTMLButtonElement;
@@ -60,10 +75,20 @@ let selectedFile: {
 let generation = 0; // bumped on every restart; stale loops see it and die
 let resizeDisplay: (() => void) | null = null;
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+const specsLine = statusLine(specs);
+const setStatus = specsLine.setStatus;
+
+/**
+ * Errors also hide the stage — a stale QR stream pulsing away under a
+ * rejection message reads as "still working".
+ *
+ * Callers decide whether the pick survives. A file rejected on size is gone;
+ * a stream that can't start at the current bytes/frame is not, because turning
+ * that setting back up is the fix.
+ */
+function showError(message: string): void {
+  stage.hidden = true;
+  specsLine.showError(message);
 }
 
 function currentMode(): "file" | "snippet" {
@@ -81,7 +106,7 @@ function applyMode(): void {
     paneFile.hidden = true;
     paneSnippet.hidden = true;
     paneDemo.hidden = false;
-    specs.textContent = "Choose a demo payload to begin";
+    setStatus("Choose a demo payload to begin");
     return;
   }
 
@@ -89,86 +114,80 @@ function applyMode(): void {
   paneDemo.hidden = true;
   paneFile.hidden = mode !== "file";
   paneSnippet.hidden = mode !== "snippet";
-  specs.textContent =
-    mode === "snippet" ? "Paste or type some text to begin" : "Choose a file to begin";
+  // The heading used to say "Send a file" even with Text snippet selected.
+  toolTitle.textContent = mode === "snippet" ? "Send text" : "Send a file";
+  setStatus(mode === "snippet" ? "Paste or type some text to begin" : "Choose a file to begin");
   // A file left in the picker survives the switch, so re-arm it rather than
   // leaving a filename on screen next to "choose a file to begin".
   if (mode === "file" && cfgFile.files?.[0]) void selectFile();
 }
 
-/** Demo payloads ship in public/, so they sit at the site root beside /send/. */
-async function selectDemo(fileName: string): Promise<void> {
+/**
+ * The one path from "user picked something" to a running stream.
+ *
+ * Kills any stream in flight, then packs the payload; a selection that lands
+ * mid-pack (the generation guard) or fails to pack (throw → showError) leaves
+ * the page idle rather than streaming something stale. Every way of choosing a
+ * payload goes through here so the guard can't be subtly wrong in one copy.
+ */
+async function startSelection(
+  status: string,
+  prepare: () => Promise<{ name: string; size: number; packed: PackedOpticalFile }>,
+): Promise<void> {
   const selectionGeneration = ++generation;
   selectedFile = null;
   stage.hidden = true;
-  specs.textContent = `loading ${fileName}…`;
+  setStatus(status);
   try {
-    const response = await fetch(`../${fileName}`);
-    if (!response.ok) throw new Error(`could not load ${fileName} (${response.status})`);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    const packed = await packFile(fileName, "image/png", bytes);
+    const { name, size, packed } = await prepare();
     if (selectionGeneration !== generation) return;
     selectedFile = {
-      name: fileName,
-      size: bytes.length,
+      name,
+      size,
       payload: packed.container,
       compression: packed.compression,
       transmittedSize: packed.transmittedSize,
     };
     await startStream(true);
   } catch (error) {
-    specs.textContent = `✗ ${error instanceof Error ? error.message : String(error)}`;
+    showError(error instanceof Error ? error.message : String(error));
   }
+}
+
+/** Demo payloads ship in public/, so they sit at the site root beside /send/. */
+async function selectDemo(fileName: string): Promise<void> {
+  await startSelection(`loading ${fileName}…`, async () => {
+    const response = await fetch(`../${fileName}`);
+    if (!response.ok) throw new Error(`could not load ${fileName} (${response.status})`);
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    return { name: fileName, size: bytes.length, packed: await packFile(fileName, "image/png", bytes) };
+  });
 }
 
 async function selectFile(): Promise<void> {
   const file = cfgFile.files?.[0];
   if (!file) return;
-  const selectionGeneration = ++generation;
-  selectedFile = null;
-  stage.hidden = true;
-  if (file.size === 0 || file.size > MAX_FILE_BYTES) {
-    specs.textContent = file.size === 0 ? "✗ choose a non-empty file" : "✗ files are limited to 64 MB";
-    return;
-  }
-
-  specs.textContent = `preparing ${file.name}…`;
-  try {
+  await startSelection(`preparing ${file.name}…`, async () => {
+    // Checked here, off File.size, rather than after reading the bytes: a file
+    // well past the limit should be refused instantly instead of after the
+    // browser has spent time and memory materialising it. Name the actual size —
+    // "too large" without a number leaves you guessing by how much.
+    if (file.size === 0) {
+      throw new Error(`${file.name} is empty — there is nothing to send.`);
+    }
+    if (file.size > MAX_FILE_BYTES) {
+      throw new Error(`${file.name} is ${formatBytes(file.size)}, over the ${MAX_FILE_LABEL} limit.`);
+    }
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const packed = await packFile(file.name, file.type, bytes);
-    if (selectionGeneration !== generation) return;
-    selectedFile = {
-      name: file.name,
-      size: file.size,
-      payload: packed.container,
-      compression: packed.compression,
-      transmittedSize: packed.transmittedSize,
-    };
-    await startStream(true);
-  } catch (error) {
-    specs.textContent = `✗ ${error instanceof Error ? error.message : String(error)}`;
-  }
+    return { name: file.name, size: file.size, packed: await packFile(file.name, file.type, bytes) };
+  });
 }
 
 async function selectSnippet(): Promise<void> {
-  const selectionGeneration = ++generation;
-  selectedFile = null;
-  stage.hidden = true;
-  specs.textContent = "preparing text snippet…";
-  try {
+  await startSelection("preparing text snippet…", async () => {
     const packed = await packSnippet(snippetText.value);
-    if (selectionGeneration !== generation) return;
-    selectedFile = {
-      name: "Text snippet",
-      size: packed.originalSize,
-      payload: packed.container,
-      compression: packed.compression,
-      transmittedSize: packed.transmittedSize,
-    };
-    await startStream(true);
-  } catch (error) {
-    specs.textContent = `✗ ${error instanceof Error ? error.message : String(error)}`;
-  }
+    return { name: "Text snippet", size: packed.originalSize, packed };
+  });
 }
 
 async function main() {
@@ -177,6 +196,7 @@ async function main() {
   // fewer — so this is a loose guard and packSnippet() remains authoritative.
   snippetText.maxLength = MAX_SNIPPET_BYTES;
   snippetLabel.textContent = `Text to send · up to ${MAX_SNIPPET_LABEL}`;
+  filePickerLabel.textContent = `Any file · up to ${MAX_FILE_LABEL}`;
 
   if (DEMO) {
     document.querySelector(".mode-badge")!.textContent = "Demo";
@@ -193,12 +213,7 @@ async function main() {
   for (const el of [cfgFps, cfgBytes, cfgEcc, cfgSize]) {
     el.addEventListener("change", () => void startStream());
   }
-  try {
-    await (navigator as Navigator & { wakeLock?: { request(t: "screen"): Promise<unknown> } })
-      .wakeLock?.request("screen");
-  } catch {
-    /* fine without it */
-  }
+  await requestScreenWakeLock();
 }
 
 /** Only on a fresh pick — a settings change restarts the stream too, and
@@ -214,8 +229,9 @@ async function startStream(revealStage = false) {
   const gen = ++generation;
   resizeDisplay = null;
   if (!selectedFile) {
-    specs.textContent =
-      currentMode() === "snippet" ? "Paste or type some text to begin" : "Choose a file to begin";
+    setStatus(
+      currentMode() === "snippet" ? "Paste or type some text to begin" : "Choose a file to begin",
+    );
     return;
   }
   const { name, size: fileSize, payload, compression, transmittedSize } = selectedFile;
@@ -226,10 +242,21 @@ async function startStream(revealStage = false) {
   const displayPx = Number(cfgSize.value);
 
   const sessionId = (Math.floor(Math.random() * 0xffff) + 1) & 0xffff;
-  const blockLen = frameBytes - HEADER_LEN;
-  if (Math.ceil(payload.length / blockLen) > 0xffff) {
-    stage.hidden = true;
-    specs.textContent = "✗ this file needs a larger bytes-per-frame setting";
+  const blockLen = blockLength(frameBytes);
+  // Keep selectedFile on this path — raising bytes/frame back up is the fix,
+  // and dropping the pick would hide that.
+  if (!fitsInOneStream(payload.length, frameBytes)) {
+    // Name a setting that is actually in the dropdown, not the bare minimum.
+    const offered = [...cfgBytes.options].map((option) => Number(option.value));
+    const suggestion =
+      smallestSufficientFrameSize(payload.length, offered) ?? minimumFrameBytes(payload.length);
+    showError(
+      `${formatBytes(payload.length)} needs ` +
+        `${sourceBlockCount(payload.length, frameBytes).toLocaleString()} blocks at ` +
+        `${frameBytes} bytes per frame, and a frame can only number ` +
+        `${MAX_SOURCE_BLOCKS.toLocaleString()} of them. ` +
+        `Raise bytes / frame to ${suggestion} or more.`,
+    );
     return;
   }
   const encoder = new LTEncoder(payload, blockLen, sessionId);
@@ -292,48 +319,49 @@ async function startStream(revealStage = false) {
       // Scroll only now: before sizeCanvas() the canvas is still 16×16, so the
       // scroll target would be the wrong height.
       if (revealStage) scrollStageIntoView();
-      specs.textContent =
+      setStatus(
         `${txFps} FPS · ${frameBytes} bytes per frame · V${version} · ECC ${ecc} · ` +
-        `${name} · ${formatBytes(fileSize)} · ` +
-        `${compression === "gzip" ? `gzip ${formatBytes(transmittedSize)}` : "no compression"} · ` +
-        `K=${encoder.k}`;
+          `${name} · ${formatBytes(fileSize)} · ` +
+          `${compression === "gzip" ? `gzip ${formatBytes(transmittedSize)}` : "no compression"} · ` +
+          `K=${encoder.k}`,
+      );
     }
-    const size = qr.modules.size;
-    const data = qr.modules.data;
-    const total = size + 2 * MARGIN;
-    const img = new ImageData(total, total);
-    const px = new Uint32Array(img.data.buffer);
-    px.fill(0xffffffff);
-    for (let y = 0; y < size; y++) {
-      const row = (y + MARGIN) * total + MARGIN;
-      const src = y * size;
-      for (let x = 0; x < size; x++) {
-        if (data[src + x]) px[row + x] = 0xff000000;
-      }
-    }
-    return img;
+    const raster = rasterizeQr(qr.modules.size, qr.modules.data, MARGIN);
+    return new ImageData(new Uint8ClampedArray(raster.pixels.buffer), raster.size, raster.size);
   };
 
-  const pump = () => {
-    if (gen !== generation) return; // superseded by a settings change
+  /**
+   * Refill the lookahead, generating at most `max` frames per call.
+   *
+   * Called once up front to fill the queue, then once per tick() — the only
+   * thing that drains it. Self-scheduling on `setTimeout(pump, 0)` instead cost
+   * ~250 wake-ups a second doing nothing once the queue was full. Capping at
+   * one frame per tick keeps the amortisation that gave us: a rAF callback
+   * never pays for more than the single frame it just consumed.
+   */
+  let generatorFailed = false;
+  const pump = (max = LOOKAHEAD) => {
+    if (generatorFailed || gen !== generation) return;
     try {
-      while (queue.length < LOOKAHEAD) queue.push(makeFrame());
+      for (let n = 0; n < max && queue.length < LOOKAHEAD; n++) queue.push(makeFrame());
     } catch (err) {
       // e.g. frame bytes over capacity for the chosen ECC level
-      specs.textContent = `✗ ${err instanceof Error ? err.message : String(err)}`;
-      return;
+      generatorFailed = true;
+      showError(err instanceof Error ? err.message : String(err));
     }
-    setTimeout(pump, 0);
   };
   pump();
 
   const interval = 1000 / txFps;
   let nextAt = performance.now();
   const tick = (now: number) => {
-    if (gen !== generation) return;
+    // generatorFailed means no frame will ever be produced again, so stop the
+    // rAF loop rather than spinning on an empty queue until a settings change.
+    if (gen !== generation || generatorFailed) return;
     requestAnimationFrame(tick);
     if (now < nextAt) return;
     const img = queue.shift();
+    pump(1);
     if (!img) {
       nextAt = now + interval;
       return;

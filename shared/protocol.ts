@@ -14,6 +14,15 @@
 
 export const HEADER_LEN = 20;
 export const MAX_FILE_BYTES = 64 * 1024 * 1024;
+/**
+ * One place for the number, so the picker label, the rejection message and
+ * packFile()'s own error can't drift apart. The HTML pulls it in as the
+ * `%MAX_FILE_LABEL%` token (see htmlTokens() in vite.config.ts).
+ *
+ * README.md still spells it out in prose — nothing templates a markdown file,
+ * so that one is on you if this ever changes.
+ */
+export const MAX_FILE_LABEL = `${MAX_FILE_BYTES / 1024 / 1024} MB`;
 const FILE_HEADER_LEN = 49;
 const MAGIC0 = 0xd1;
 const MAGIC1 = 0x0c;
@@ -86,6 +95,72 @@ async function gunzipAsync(bytes: Uint8Array, maxBytes: number): Promise<Uint8Ar
   return out;
 }
 
+/**
+ * Reduce a name to a bare basename.
+ *
+ * Applied on BOTH ends. The sender doing it is a convenience; the receiver
+ * doing it is the part that matters, because the name it unpacks arrived over
+ * the optical channel and is whatever the other screen chose to display. The
+ * `download` attribute is the only consumer and browsers sanitise it too, but
+ * the receiver has no reason to take the sender's word for it.
+ */
+function safeFileName(name: string): string {
+  const base = name.split(/[\\/]/).pop() ?? "";
+  // Strip control characters (NUL and newlines in particular) and the
+  // relative-path names that survive a basename split.
+  const cleaned = base.replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  return cleaned === "" || cleaned === "." || cleaned === ".." ? "transfer.bin" : cleaned;
+}
+
+/** Media types whose bytes are already entropy-coded, keyed by exact subtype. */
+const PRECOMPRESSED_TYPES = new Set([
+  "application/gzip",
+  "application/java-archive",
+  "application/vnd.rar",
+  "application/x-7z-compressed",
+  "application/x-brotli",
+  "application/x-bzip",
+  "application/x-bzip2",
+  "application/x-gzip",
+  "application/x-lzma",
+  "application/x-rar-compressed",
+  "application/x-xz",
+  "application/x-zip-compressed",
+  "application/zip",
+  "application/zstd",
+]);
+
+/** Image and audio subtypes that are NOT already compressed — the exceptions
+ *  to the otherwise-safe "all image/*, all audio/*" rule. */
+const COMPRESSIBLE_IMAGES = /^image\/(bmp|x-ms-bmp|svg\+xml|tiff|x-icon|vnd\.microsoft\.icon)$/;
+const COMPRESSIBLE_AUDIO = /^audio\/(wav|x-wav|wave|vnd\.wave|aiff|x-aiff|basic|l16)$/;
+
+/**
+ * Would gzip be a waste of time on this?
+ *
+ * Trying costs a full-size allocation and a pass over every byte to discover
+ * the answer. On a 64 MB pick that is one of the five simultaneous copies the
+ * sender holds, and JPEGs, MP4s and zips — the files people actually send —
+ * never win the trade.
+ *
+ * Deliberately a list rather than a heuristic, and deliberately conservative:
+ * a wrong "skip" costs a few percent of transfer size, a wrong "try" costs a
+ * whole buffer. Formats that genuinely do compress (bmp, svg, tiff, wav) are
+ * excluded on purpose, and PDF is left off the list entirely — its streams are
+ * usually deflated already, but text-heavy ones still gain enough to matter.
+ */
+export function isPrecompressedType(type: string): boolean {
+  const media = type.split(";")[0]!.trim().toLowerCase();
+  if (media.startsWith("video/")) return true;
+  if (media.startsWith("image/")) return !COMPRESSIBLE_IMAGES.test(media);
+  if (media.startsWith("audio/")) return !COMPRESSIBLE_AUDIO.test(media);
+  // The OOXML and OpenDocument families are zip containers.
+  if (media.startsWith("application/vnd.openxmlformats-officedocument.")) return true;
+  if (media.startsWith("application/vnd.oasis.opendocument.")) return true;
+  if (media.endsWith("+zip")) return true;
+  return PRECOMPRESSED_TYPES.has(media);
+}
+
 export async function packFile(
   name: string,
   type: string,
@@ -93,19 +168,20 @@ export async function packFile(
 ): Promise<PackedOpticalFile> {
   if (bytes.length === 0) throw new Error("Choose a non-empty file.");
   if (bytes.length > MAX_FILE_BYTES) {
-    throw new Error("Files are limited to 64 MB in this browser build.");
+    throw new Error(`Files are limited to ${MAX_FILE_LABEL} in this browser build.`);
   }
 
-  const safeName = name.split(/[\\/]/).pop() || "transfer.bin";
-  const nameBytes = textEncoder.encode(safeName);
+  const nameBytes = textEncoder.encode(safeFileName(name));
   const typeBytes = textEncoder.encode(type || "application/octet-stream");
   if (nameBytes.length > 0xffff || typeBytes.length > 0xffff) {
     throw new Error("The file name or media type is too long.");
   }
 
+  // Too small to be worth a gzip header, or a format gzip cannot help with.
+  const tryGzip = bytes.length >= 768 && !isPrecompressedType(type);
   const [sha256, compressed] = await Promise.all([
     digest(bytes),
-    bytes.length >= 768 ? gzipAsync(bytes) : Promise.resolve(undefined),
+    tryGzip ? gzipAsync(bytes) : Promise.resolve(undefined),
   ]);
   const useGzip = compressed !== undefined && compressed.length + 64 < bytes.length;
   const transmitted = useGzip ? compressed : bytes;
@@ -175,7 +251,9 @@ export async function unpackFile(container: Uint8Array): Promise<OpticalFile> {
   }
 
   return {
-    name: textDecoder.decode(container.subarray(FILE_HEADER_LEN, FILE_HEADER_LEN + nameLength)) || "transfer.bin",
+    name: safeFileName(
+      textDecoder.decode(container.subarray(FILE_HEADER_LEN, FILE_HEADER_LEN + nameLength)),
+    ),
     type:
       textDecoder.decode(container.subarray(FILE_HEADER_LEN + nameLength, dataOffset)) ||
       "application/octet-stream",
@@ -232,6 +310,23 @@ export function parseFrame(
   if (header.k === 0 || header.blockLen === 0 || header.totalLen === 0) return null;
   if (bytes.length !== HEADER_LEN + header.blockLen) return null;
   return { header, block: bytes.subarray(HEADER_LEN) };
+}
+
+/**
+ * Everything about a frame that has to hold constant for a decoder to keep
+ * accepting frames into it. `seq` is deliberately absent — it is the one field
+ * that varies within a stream.
+ *
+ * The receiver resets on ANY disagreement, not just a new session id: session
+ * ids are 16 bits drawn at random on every sender restart, so a collision
+ * across a restart is rare but real, and a mismatched frame fed into the old
+ * decoder corrupts it silently — surfacing only as a checksum failure after the
+ * whole transfer has run. Including `payloadFnv` also means a sender restarted
+ * on the SAME file resumes into the same decoder, which is correct: identical
+ * k, sessionId and seq produce an identical frame.
+ */
+export function streamIdentity(h: FrameHeader): string {
+  return `${h.sessionId}:${h.k}:${h.blockLen}:${h.totalLen}:${h.payloadFnv}`;
 }
 
 export function fnv1a(bytes: Uint8Array): number {

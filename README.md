@@ -25,16 +25,22 @@ receiver works out which one is arriving from the container's media type.
 
 ```bash
 npm install
-npm run dev     # dev server with HMR
-npm run serve   # build, then serve the production bundle
-npm run demo    # demo mode: only the bundled payloads can be sent
+npm run dev               # dev server with HMR
+npm run serve             # build, then serve the production bundle
+npm run demo              # demo mode: only the bundled payloads can be sent
+npm test                  # golden wire-format vectors and unit tests
+npm run build             # the hosted site → dist/
+npm run build:standalone  # both self-contained pages → dist-standalone/
+npm run build:all         # everything
 ```
 
 `npm run demo` locks the sender to the two bundled images — no file picker, no
 text box. Use it when the sending machine is going to sit unattended in front
-of people, so nobody can browse the host's filesystem through the picker. The
-lock is compiled in: the demo branch is the only sender code in that bundle,
-and a normal build tree-shakes it away entirely.
+of people, so nobody can browse the host's filesystem through the picker. It
+runs the dev server with `VITE_DEMO=1`, which swaps the sender's controls for
+the demo payload buttons and never wires up the file input. Note that this is
+the dev server, not a hardened kiosk: the picker markup is still in the DOM
+(inert, and hidden), and anyone with the machine's keyboard has devtools.
 
 - On the **sending** device (a laptop is ideal): open
   `https://localhost:5173/send/`, choose a file, and it starts streaming. Max
@@ -51,6 +57,67 @@ and a normal build tree-shakes it away entirely.
 Neither mode is encrypted: whatever is on the sending screen is readable by
 any camera pointed at it. The property this gives you is no network, not
 confidentiality.
+
+## Ways to run it
+
+Three shapes, all built from the same source.
+
+| | what it is | needs a server? | offline |
+|---|---|---|---|
+| **Hosted site** | the three pages, plus a service worker | yes, any static host | after the first visit |
+| **`decimen-sender.html`** | one file, ~55 KB | no | always |
+| **`decimen-receiver.html`** | one file, ~1.3 MB | see below | always |
+
+Built artifacts for all three are attached to every
+[release](../../releases).
+
+### Hosted site, offline afterwards
+
+The built site registers a service worker that precaches every page, the
+decoder wasm included. Load it once over the network, then add it to your home
+screen: it opens and transfers with the network off. This is the one to use on
+a phone — it keeps a real `https://` origin, which is what the camera wants.
+
+Any of the three pages will do it — the registration is rooted at the site, not
+at the page, so landing straight on `/receive/` from a shared link caches the
+whole thing just as visiting the home page does.
+
+### Standalone files
+
+`npm run build:standalone` produces two pages with nothing external in them at
+all: no `<script src>`, no stylesheet link, no fetch. The receiver carries the
+940 KB decoder wasm as a `data:` URI and its decode worker as a base64 blob
+URL, which is why it is 1.3 MB. Mail one to someone, drop it on a USB stick,
+open it — no install, no server, no network.
+
+**The receiver has one real caveat.** Opening it from `file://` gives the page
+an opaque origin. `file://` counts as a secure context, so `navigator.media
+Devices` exists and nothing *looks* wrong, but the camera permission is keyed
+to that origin — desktop Chrome and Firefox will generally prompt and work,
+while **iOS Safari and Android Chrome opening a local file will not give you a
+camera.** Since the receiver is usually the phone, that matters. Serve the file
+over http(s) from anything, or use the hosted site's offline mode instead.
+
+The sender has no such problem — canvas and QR generation only. It works from
+`file://` everywhere.
+
+### Deploying
+
+Three workflows in `.github/workflows`:
+
+- **`ci.yml`** — tests and builds on every push to `main` or `release/*` and on
+  every PR. Also asserts the served `receive` chunk stays under 20 KB, which
+  catches the inlined worker or wasm leaking out of the standalone build into
+  the site, and that each page's manifest and service-worker references point
+  at files that exist.
+- **`pages.yml`** — deploys the site to GitHub Pages on every push to `main`.
+  Enable it once under Settings → Pages → Source → GitHub Actions.
+- **`release.yml`** — on a `v*` tag, builds everything and attaches
+  `decimen-<tag>-site.zip`, `decimen-<tag>-sender.html`,
+  `decimen-<tag>-receiver.html`, and `SHA256SUMS.txt` to the release.
+
+The site build uses `base: "./"`, so it works under a project subpath
+(`user.github.io/repo/`) with no configuration.
 
 
 **Why the dev server is https-only:** the receiver uses `getUserMedia`, and
@@ -117,11 +184,12 @@ mean dropped frames, which the fountain happily absorbs.
 
 ## Tuning
 
-Both pages have a collapsed **Settings** panel. On the sender: payload size
-(512 KB or 2 MB), tx fps, bytes per frame, error-correction level, and
-display size. Changing anything restarts the stream, and the receiver resets
-automatically off the new session id. On the receiver: capture width,
-capture fps, and decode worker count, applied when the camera starts.
+Both pages have a collapsed **Settings** panel. On the sender: tx fps, bytes
+per frame, error-correction level, and display size. Changing anything
+restarts the stream, and the receiver resets automatically off the new
+session id. On the receiver: capture width, capture fps, and decode worker
+count, applied live while the camera runs — a device that refuses a live
+reconfigure (iOS, sometimes) keeps the current stream and says so.
 
 | setting | default | notes |
 |---|---|---|

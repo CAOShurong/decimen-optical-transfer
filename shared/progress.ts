@@ -1,4 +1,27 @@
-export const EXPECTED_FOUNTAIN_OVERHEAD = 1.18;
+/**
+ * Distinct frames per source block an LT stream needs, as a function of k.
+ *
+ * The often-quoted ~1.15 is asymptotic and only holds for large k. Measured
+ * here over 200 trials per k (128-byte blocks, frames fed until the decoder
+ * completes):
+ *
+ *     k       1     5    25    50   100   200   400   800  1600  3200
+ *     p50  1.00  1.40  1.44  1.38  1.31  1.26  1.22  1.18  1.15  1.12
+ *     p90  1.00  2.20  1.92  1.76  1.52  1.38  1.30  1.24  1.19  1.15
+ *
+ * `1.1 + 2.45/sqrt(k)` tracks the p50 closely from k≈50 up and sits just above
+ * it, which is the direction that matters: an ETA that quotes too little and
+ * then keeps slipping reads as a stall. Clamped at both ends — below k≈25 the
+ * spread is enormous but the whole transfer is over in a second or two anyway.
+ *
+ * A 300 KB file at 2953 bytes/frame is only k≈100, so most real transfers sit
+ * in the part of this curve where the flat 1.18 this replaced was wrong by
+ * 15–40%.
+ */
+export function expectedFountainOverhead(sourceBlocks: number): number {
+  const k = Math.max(1, sourceBlocks);
+  return Math.min(1.6, Math.max(1.15, 1.1 + 2.45 / Math.sqrt(k)));
+}
 
 export interface TransferProgressEstimate {
   fraction: number;
@@ -16,7 +39,7 @@ export function estimateTransferProgress(
   const minimumFrames = Math.max(1, sourceBlocks);
   const expectedFrames = Math.max(
     minimumFrames + 1,
-    Math.ceil(minimumFrames * EXPECTED_FOUNTAIN_OVERHEAD),
+    Math.ceil(minimumFrames * expectedFountainOverhead(minimumFrames)),
   );
   const expectedRedundancy = expectedFrames - minimumFrames;
 

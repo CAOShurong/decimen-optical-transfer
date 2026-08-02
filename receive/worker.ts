@@ -3,7 +3,7 @@
 // One frame in flight per worker; the main thread drops frames when all
 // workers are busy. Frames are disposable — the fountain doesn't care.
 
-import wasmUrl from "zxing-wasm/reader/zxing_reader.wasm?url";
+import wasmUrl from "./wasm-url";
 import { prepareZXingModule, readBarcodes } from "zxing-wasm/reader";
 
 prepareZXingModule({

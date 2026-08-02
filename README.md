@@ -6,6 +6,9 @@ device points its camera at it and reconstructs the file. **No network path
 between the devices, no app, no pairing, no permissions beyond the camera.**
 The payload travels as light.
 
+**Live at [decimen.app](https://decimen.app/)** — open it on both devices and
+go. Works offline after the first visit.
+
 This is a minimal proof of concept extracted from a larger
 experiment that reached **128 KB/s phone-to-phone** with denser frames,
 multi-code grids, and an error-corrected color channel. This version accepts
@@ -22,6 +25,9 @@ receiver works out which one is arriving from the container's media type.
 <p align="center"><em>Mid-transfer: a phone pulling a 2 MB image out of the air at 129 KB/s.</em></p>
 
 ## Try it
+
+The hosted site is live at [decimen.app](https://decimen.app/); everything
+below is for running it yourself.
 
 ```bash
 npm install
@@ -64,7 +70,7 @@ Three shapes, all built from the same source.
 
 | | what it is | needs a server? | offline |
 |---|---|---|---|
-| **Hosted site** | the three pages, plus a service worker | yes, any static host | after the first visit |
+| **Hosted site** | the three pages, plus a service worker — live at [decimen.app](https://decimen.app/) | yes, any static host | after the first visit |
 | **`decimen-sender.html`** | one file, ~55 KB | no | always |
 | **`decimen-receiver.html`** | one file, ~1.3 MB | see below | always |
 

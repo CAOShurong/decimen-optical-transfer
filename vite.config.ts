@@ -25,7 +25,7 @@ import { rootPwaHead } from "./build/root-pwa-head";
 // — scrapers are inconsistent about resolving relative ones. Override with
 // VITE_SITE_URL when deploying somewhere else; nothing else depends on it, and
 // the build still works under any subpath.
-const SITE_URL = process.env.VITE_SITE_URL ?? "https://bashalarmistalt.github.io/decimen-optical-transfer/";
+const SITE_URL = process.env.VITE_SITE_URL ?? "https://decimen.app/";
 
 // HTTPS always: the receiver needs getUserMedia, and on insecure origins
 // that API does not exist at all — a phone reaching this server over the LAN

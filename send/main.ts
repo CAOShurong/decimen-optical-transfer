@@ -37,6 +37,7 @@ import {
 } from "../shared/protocol";
 import { statusLine } from "../shared/status-line";
 import { requestScreenWakeLock } from "../shared/wake-lock";
+import { wireShareDialog } from "../shared/share-dialog";
 
 const MARGIN = 4; // quiet-zone modules
 const LOOKAHEAD = 3;
@@ -51,6 +52,7 @@ const stage = document.getElementById("stage") as HTMLDivElement;
 const specs = document.getElementById("specs")!;
 const cfgFile = document.getElementById("cfg-file") as HTMLInputElement;
 const filePickerLabel = document.getElementById("file-picker-label")!;
+const filePickerButton = document.getElementById("file-picker-button")!;
 const toolTitle = document.getElementById("tool-title")!;
 const snippetText = document.getElementById("snippet-text") as HTMLTextAreaElement;
 const snippetLabel = document.getElementById("snippet-label")!;
@@ -60,6 +62,18 @@ const paneSnippet = document.getElementById("pane-snippet")!;
 const paneDemo = document.getElementById("pane-demo")!;
 const modePicker = document.getElementById("mode-picker")!;
 const modeInputs = [...document.querySelectorAll<HTMLInputElement>('input[name="send-mode"]')];
+const streamSpecs = document.getElementById("stream-specs")!;
+const footerHint = document.getElementById("footer-hint")!;
+const spec = (id: string) => document.getElementById(id)!;
+
+/** Panels that only mean something while a stream is up: the spec grid at the
+ *  bottom of Transfer settings, and the receiver hint under the status line. */
+function showStreamPanels(visible: boolean): void {
+  streamSpecs.hidden = !visible;
+  footerHint.hidden = !visible;
+}
+
+const openShareDialog = wireShareDialog();
 const cfgFps = document.getElementById("cfg-fps") as HTMLSelectElement;
 const cfgBytes = document.getElementById("cfg-bytes") as HTMLSelectElement;
 const cfgEcc = document.getElementById("cfg-ecc") as HTMLSelectElement;
@@ -87,7 +101,9 @@ const setStatus = specsLine.setStatus;
  * that setting back up is the fix.
  */
 function showError(message: string): void {
+  setStageFullscreen(false);
   stage.hidden = true;
+  showStreamPanels(false);
   specsLine.showError(message);
 }
 
@@ -95,11 +111,65 @@ function currentMode(): "file" | "snippet" {
   return modeInputs.find((input) => input.checked)?.value === "snippet" ? "snippet" : "file";
 }
 
+/** The picker reads as state — which file is armed — and the button offers
+ *  the next action: pick when idle, stop when streaming. A rejected pick
+ *  keeps the idle wording: the status line already names what went wrong,
+ *  and nothing is streaming. */
+function updateFilePicker(): void {
+  const armed = currentMode() === "file" && selectedFile !== null;
+  paneFile.classList.toggle("has-file", armed);
+  filePickerButton.textContent = armed ? "Stop transfer" : "Select File";
+  filePickerLabel.textContent =
+    armed && selectedFile ? `Selected file: ${selectedFile.name}` : `Any file · up to ${MAX_FILE_LABEL}`;
+}
+
+/** Tear the stream down and disarm the picker. The input is cleared so the
+ *  same file can be picked again (change would not fire otherwise) and so a
+ *  mode switch does not silently resurrect the stopped stream. */
+function stopTransfer(): void {
+  generation++;
+  selectedFile = null;
+  setStageFullscreen(false);
+  stage.hidden = true;
+  showStreamPanels(false);
+  cfgFile.value = "";
+  updateFilePicker();
+  setStatus("Choose a file to begin");
+}
+
+/** Tap the code to fill the screen with it — a bigger physical code lets the
+ *  receiver sit farther back or decode denser frames.
+ *
+ *  Fullscreen is a page STATE (body.qr-full — see style.css), never a fixed
+ *  overlay and never a separate element: Safari 26 latches its chrome tint
+ *  onto fixed layers, and an overlay element that merely loses a class is
+ *  still there for the heuristic to track. A flow layout that reflows on
+ *  exit leaves nothing behind. Tap again (or Esc) to shrink back. */
+let scrollBeforeFullscreen = 0;
+function setStageFullscreen(on: boolean): void {
+  if (on === document.body.classList.contains("qr-full")) return;
+  if (on) scrollBeforeFullscreen = window.scrollY;
+  document.body.classList.toggle("qr-full", on);
+  resizeDisplay?.();
+  // Entering: the stage IS the page now, start at its top. Leaving: put the
+  // user back on the exact spot they expanded from.
+  window.scrollTo(0, on ? 0 : scrollBeforeFullscreen);
+}
+
+stage.addEventListener("click", () => {
+  setStageFullscreen(!document.body.classList.contains("qr-full"));
+});
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") setStageFullscreen(false);
+});
+
 /** Switching what we're sending kills any stream in flight and clears the stage. */
 function applyMode(): void {
   generation++;
   selectedFile = null;
+  setStageFullscreen(false);
   stage.hidden = true;
+  showStreamPanels(false);
 
   if (DEMO) {
     modePicker.hidden = true;
@@ -117,6 +187,7 @@ function applyMode(): void {
   // The heading used to say "Send a file" even with Text snippet selected.
   toolTitle.textContent = mode === "snippet" ? "Send text" : "Send a file";
   setStatus(mode === "snippet" ? "Paste or type some text to begin" : "Choose a file to begin");
+  updateFilePicker();
   // A file left in the picker survives the switch, so re-arm it rather than
   // leaving a filename on screen next to "choose a file to begin".
   if (mode === "file" && cfgFile.files?.[0]) void selectFile();
@@ -181,6 +252,7 @@ async function selectFile(): Promise<void> {
     const bytes = new Uint8Array(await file.arrayBuffer());
     return { name: file.name, size: file.size, packed: await packFile(file.name, file.type, bytes) };
   });
+  updateFilePicker();
 }
 
 async function selectSnippet(): Promise<void> {
@@ -196,15 +268,26 @@ async function main() {
   // fewer — so this is a loose guard and packSnippet() remains authoritative.
   snippetText.maxLength = MAX_SNIPPET_BYTES;
   snippetLabel.textContent = `Text to send · up to ${MAX_SNIPPET_LABEL}`;
-  filePickerLabel.textContent = `Any file · up to ${MAX_FILE_LABEL}`;
 
+  document.querySelector('.mode-nav a[href="../send/"]')?.setAttribute("aria-current", "page");
   if (DEMO) {
-    document.querySelector(".mode-badge")!.textContent = "Demo";
+    const current = document.querySelector('.mode-nav a[href="../send/"]');
+    if (current) current.textContent = "Demo";
     for (const button of document.querySelectorAll<HTMLButtonElement>("[data-demo]")) {
       button.addEventListener("click", () => void selectDemo(button.dataset.demo!));
     }
   } else {
     cfgFile.addEventListener("change", () => void selectFile());
+    // While a file is armed the picker label must NOT open the file dialog:
+    // preventDefault cancels the label→input forwarding, and only the button
+    // (or a keyboard activation of the hidden input, whose click bubbles up
+    // through the label) stops the stream.
+    paneFile.addEventListener("click", (event) => {
+      if (!paneFile.classList.contains("has-file")) return;
+      event.preventDefault();
+      const target = event.target instanceof Element ? event.target : null;
+      if (target && (target.closest(".file-picker-button") || target === cfgFile)) stopTransfer();
+    });
     sendSnippetBtn.addEventListener("click", () => void selectSnippet());
     for (const input of modeInputs) input.addEventListener("change", applyMode);
   }
@@ -228,6 +311,8 @@ function scrollStageIntoView() {
 async function startStream(revealStage = false) {
   const gen = ++generation;
   resizeDisplay = null;
+  // Stale until this stream's first frame locks its version and refills them.
+  showStreamPanels(false);
   if (!selectedFile) {
     setStatus(
       currentMode() === "snippet" ? "Paste or type some text to begin" : "Choose a file to begin",
@@ -280,20 +365,29 @@ async function startStream(revealStage = false) {
   const sizeCanvas = () => {
     const dpr = window.devicePixelRatio || 1;
     const total = modules + 2 * MARGIN;
-    const containerWidth = stage.parentElement?.getBoundingClientRect().width ?? window.innerWidth;
-    const stageStyle = getComputedStyle(stage);
-    const horizontalChrome =
-      Number.parseFloat(stageStyle.paddingLeft) +
-      Number.parseFloat(stageStyle.paddingRight) +
-      Number.parseFloat(stageStyle.borderLeftWidth) +
-      Number.parseFloat(stageStyle.borderRightWidth);
-    const cssBudget = fitQrDisplaySize(
-      window.innerWidth,
-      window.innerHeight,
-      containerWidth,
-      displayPx,
-      horizontalChrome,
-    );
+    let cssBudget: number;
+    if (document.body.classList.contains("qr-full")) {
+      // Tap-to-fullscreen: the whole short viewport edge. The display-size
+      // slider and page chrome are deliberately ignored — the point of the
+      // mode is "as big as this device goes".
+      cssBudget = Math.min(window.innerWidth, window.innerHeight);
+    } else {
+      const containerWidth =
+        stage.parentElement?.getBoundingClientRect().width ?? window.innerWidth;
+      const stageStyle = getComputedStyle(stage);
+      const horizontalChrome =
+        Number.parseFloat(stageStyle.paddingLeft) +
+        Number.parseFloat(stageStyle.paddingRight) +
+        Number.parseFloat(stageStyle.borderLeftWidth) +
+        Number.parseFloat(stageStyle.borderRightWidth);
+      cssBudget = fitQrDisplaySize(
+        window.innerWidth,
+        window.innerHeight,
+        containerWidth,
+        displayPx,
+        horizontalChrome,
+      );
+    }
     scale = Math.max(1, Math.floor((cssBudget * dpr) / total));
     staging.width = total;
     staging.height = total;
@@ -319,12 +413,26 @@ async function startStream(revealStage = false) {
       // Scroll only now: before sizeCanvas() the canvas is still 16×16, so the
       // scroll target would be the wrong height.
       if (revealStage) scrollStageIntoView();
-      setStatus(
-        `${txFps} FPS · ${frameBytes} bytes per frame · V${version} · ECC ${ecc} · ` +
-          `${name} · ${formatBytes(fileSize)} · ` +
-          `${compression === "gzip" ? `gzip ${formatBytes(transmittedSize)}` : "no compression"} · ` +
-          `K=${encoder.k}`,
-      );
+      // The stream's parameters live at the bottom of Transfer settings, next
+      // to the knobs that produced them; the status line stays for prose.
+      spec("spec-fps").textContent = `${txFps} fps`;
+      spec("spec-frame").textContent = `${frameBytes} bytes`;
+      spec("spec-qr").textContent = `V${version} · ECC ${ecc}`;
+      spec("spec-payload").textContent = `${name} · ${formatBytes(fileSize)}`;
+      spec("spec-compression").textContent =
+        compression === "gzip" ? `gzip → ${formatBytes(transmittedSize)}` : "none";
+      spec("spec-k").textContent = `K = ${encoder.k}`;
+      showStreamPanels(true);
+      // The tail of the status line is the door to the share dialog. Built by
+      // hand because setStatus is textContent-only — and the next setStatus
+      // wiping the button out is exactly right.
+      setStatus(`Streaming ${name} — `);
+      const share = document.createElement("button");
+      share.type = "button";
+      share.className = "text-button";
+      share.textContent = "Share receiver link";
+      share.addEventListener("click", openShareDialog);
+      specs.append(share);
     }
     const raster = rasterizeQr(qr.modules.size, qr.modules.data, MARGIN);
     return new ImageData(new Uint8ClampedArray(raster.pixels.buffer), raster.size, raster.size);

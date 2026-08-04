@@ -1,6 +1,12 @@
 * {
   box-sizing: border-box;
 }
+html {
+  /* Safari 26 tints its chrome and the safe-area bands from sampled page CSS
+     (it no longer reads theme-color), and a transparent root samples as
+     WHITE. The explicit root background is what keeps the bands page-dark. */
+  background: var(--bg);
+}
 body {
   margin: 0;
   background: var(--bg);
@@ -73,53 +79,124 @@ button:focus-visible {
 }
 
 .file-picker {
+  position: relative;
   width: min(92vw, 640px);
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  gap: 14px;
   color: var(--text);
   background: var(--panel);
   border: 1px solid var(--line-bright);
   border-radius: 8px;
   padding: 14px 16px;
-}
-.file-picker span {
-  color: var(--accent);
-  font-weight: 700;
-}
-.file-picker input {
-  max-width: 100%;
-  font: inherit;
-}
-/* Choosing a file is a step toward the action, not the action — and the
-   native control is the one element on the page that otherwise looks foreign. */
-.file-picker input {
-  color: var(--muted);
+  cursor: pointer;
 }
 
-.file-picker input::file-selector-button {
-  margin-right: 12px;
-  color: var(--text);
-  background: transparent;
-  border: 1px solid var(--line-bright);
+/* Stands in for the native control, which is visually hidden below but still
+   focusable. With no file armed this IS the page's call to action, so it
+   wears the CTA blue; once a file is streaming it becomes "Stop transfer" —
+   a red outline button, not another blue action (see the note on .has-file). */
+.file-picker-button {
+  flex: none;
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: 1px solid transparent;
   border-radius: 6px;
   padding: 8px 14px;
-  font: inherit;
   font-weight: 700;
-  cursor: pointer;
-  transition: border-color 130ms ease, color 130ms ease;
+  transition: background-color 130ms ease, border-color 130ms ease, color 130ms ease;
 }
 
-.file-picker input::file-selector-button:hover {
+.file-picker:hover .file-picker-button {
+  background: var(--accent-hi);
+}
+
+/* Red is the RESTING state, not a hover flourish: iOS latches :hover on the
+   last tap target, which made a hover-only red look permanent there — until
+   a modal's inert background cleared it and the button "lost" its color. */
+.file-picker.has-file .file-picker-button {
+  color: var(--red);
+  background: transparent;
+  border-color: var(--red);
+}
+
+.file-picker.has-file:hover .file-picker-button {
+  /* --red at ~12% for the fill; keep in step if the token changes. */
+  background: rgba(255, 123, 114, 0.12);
+}
+
+.file-picker-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
   color: var(--accent);
-  border-color: var(--accent);
+  font-weight: 700;
+}
+
+/* Hidden but not display: none — it must stay focusable for the keyboard. */
+.file-picker input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Keyboard focus only — :focus-within kept the ring on after every pointer
+   pick, because the closing file dialog hands focus back to the input. */
+.file-picker:has(input:focus-visible) .file-picker-button {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
 }
 .stage {
   background: #fff;
   padding: 20px;
   border-radius: 10px;
+  /* The code itself is the tap target for the fullscreen toggle below. */
+  cursor: zoom-in;
+}
+
+/* Tap-to-fullscreen — deliberately NOT a fixed overlay and NOT :fullscreen
+   (iOS has no element fullscreen API, and Safari 26 tints its chrome from
+   fixed layers and latches the tint). Instead it is a page STATE: body gets
+   .qr-full, everything else hides, and the stage fills the viewport in
+   normal document flow. Ordinary flow repaints on reflow, so the safe-area
+   bands revert with the page — there is no compositor layer to latch. */
+body.qr-full {
+  padding: 0;
+  gap: 0;
+}
+
+body.qr-full :is(.site-header, .site-footer),
+body.qr-full .send-shell > :not(#stage) {
+  display: none;
+}
+
+body.qr-full .send-shell {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body.qr-full #stage {
+  width: 100%;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  cursor: zoom-out;
+}
+
+/* display: flex above would otherwise defeat the hidden attribute — an error
+   while fullscreen must still take the stage down (the id outranks .stage). */
+body.qr-full #stage[hidden] {
+  display: none;
+}
+
+.stage[hidden] {
+  display: none;
 }
 .stage canvas {
   display: block;
@@ -166,8 +243,10 @@ button:focus-visible {
 .progress > div.error {
   background: var(--red);
 }
+/* Styled like the page headings, not green: the status line already says
+   "SHA-256 verified ✓", which is what green is reserved for in this palette. */
 .done {
-  color: var(--green);
+  color: var(--text);
   font-size: 22px;
   font-weight: 700;
 }
@@ -176,9 +255,13 @@ button:focus-visible {
   font-size: 22px;
   font-weight: 700;
 }
-img.received {
+img.received,
+video.received {
   max-width: min(92vw, 640px);
   border-radius: 10px;
+}
+audio.received {
+  width: min(92vw, 640px);
 }
 #result {
   display: flex;
@@ -250,6 +333,35 @@ details.settings input[type="range"] {
   color: var(--muted);
   font-size: 11px;
   letter-spacing: 0.04em;
+}
+
+/* Live parameters of the running stream, parked at the bottom of Transfer
+   settings — the knobs above are the inputs, this is what they produced. */
+.stream-specs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px 18px;
+  margin: 10px 0 2px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+}
+
+.stream-specs div {
+  min-width: 0;
+}
+
+.stream-specs dt {
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stream-specs dd {
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
 .metrics {
   display: grid;
@@ -373,25 +485,48 @@ details.settings input[type="range"] {
   color: var(--accent);
 }
 
-.header-side {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.header-note,
-.mode-badge {
+.mode-badge,
+.mode-nav a {
   color: var(--muted);
   font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
+/* Standalone pages only: the build collapses the mode nav to this badge,
+   because a single file has no sibling page to link to. */
 .mode-badge {
   color: var(--text);
   border: 1px solid var(--line-bright);
   border-radius: 999px;
   padding: 4px 9px;
+}
+
+.mode-nav {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.mode-nav a {
+  padding: 3px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  text-decoration: none;
+}
+
+.mode-nav a:hover,
+.mode-nav a:focus-visible {
+  color: var(--text);
+}
+
+/* Set by each page's main.ts — the markup is shared verbatim (see the pages). */
+.mode-nav a[aria-current="page"] {
+  color: var(--text);
+  background: var(--panel);
+  border-color: var(--line-bright);
 }
 
 .eyebrow,
@@ -497,9 +632,10 @@ details.settings input[type="range"] {
   width: 100%;
   min-height: 54px;
   padding: 0 22px;
-  color: var(--accent);
-  background: rgba(var(--accent-rgb), 0.07);
-  border: 1px solid rgba(var(--accent-rgb), 0.38);
+  /* Solid CTA blue, matching the page's other primary buttons. */
+  color: var(--accent-ink);
+  background: var(--accent);
+  border: 1px solid var(--accent);
   border-radius: 10px;
   font-size: 13px;
   font-weight: 700;
@@ -525,8 +661,8 @@ details.settings input[type="range"] {
 .action:hover,
 .action:focus-visible {
   color: var(--accent-ink);
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-hi);
+  border-color: var(--accent-hi);
 }
 
 /* Nudge the arrow the way it points, so the two cards read as opposite
@@ -861,6 +997,17 @@ details.settings input[type="range"] {
   min-height: 56px;
 }
 
+/* Positioned wrapper the no-signal toast hangs from: .preview itself clips
+   everything outside its rounded corners, so "above the camera box" has to be
+   anchored one level up. */
+.preview-zone {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: min(100%, 640px);
+}
+
 .preview {
   position: relative;
   width: min(100%, 640px);
@@ -935,42 +1082,145 @@ details.settings input[type="range"] {
   border-radius: 10px;
 }
 
-/* Shown when the camera has run for a while without decoding anything. Both
-   of the fixes that matter are on the sender, so this has to be readable at a
-   glance from across a room. */
-.no-signal {
-  width: 100%;
-  max-width: 640px;
-  padding: 16px 18px;
+/* Shown when the camera has run for a while without decoding anything.
+   Floats just above the camera box — appearing must not shift the page — and
+   stays small enough to ignore: sometimes it just needs another second. */
+.no-signal-toast {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: calc(100% - 20px);
+  padding: 8px 16px;
+  color: var(--text);
+  background: rgba(var(--bg-rgb), 0.85);
+  border: 1px solid var(--line-bright);
+  border-radius: 999px;
+  font-size: 13px;
+  white-space: nowrap;
+  /* Tapping Dismiss on iOS was selecting the label text — and because the
+     toast is hidden rather than rebuilt, the selection was still painted the
+     next time it appeared. This is chrome, not content: nothing to select. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* display: flex above would defeat the hidden attribute without this. */
+.no-signal-toast[hidden] {
+  display: none;
+}
+
+.no-signal-dismiss {
+  color: var(--muted);
+}
+
+.help-dialog {
+  width: min(92vw, 440px);
   color: var(--muted);
   background: var(--panel);
   border: 1px solid var(--line-bright);
-  border-left: 3px solid var(--accent);
-  border-radius: 10px;
+  border-radius: 12px;
+  padding: 18px 20px;
   font-size: 13px;
   line-height: 1.6;
 }
 
-.no-signal strong {
-  display: block;
-  margin-bottom: 8px;
+.help-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.help-dialog h2 {
+  margin: 0 0 10px;
   color: var(--accent);
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.no-signal ul {
+/* It carries focus on open (see the autofocus note in the markup) — a ring on
+   a heading would look like a bug. */
+.help-dialog h2:focus {
+  outline: none;
+}
+
+.help-dialog ul {
   margin: 0;
   padding-left: 18px;
 }
 
-.no-signal li + li {
+.help-dialog li + li {
   margin-top: 6px;
 }
 
-.no-signal-dismiss {
-  margin-top: 12px;
+.help-dialog .secondary-button {
+  margin-top: 14px;
+}
+
+/* The share dialog (home page and sender) builds on the help dialog. */
+.share-dialog {
+  text-align: center;
+}
+
+/* Centered at the bottom of the page, with clear air on both sides: a
+   comfortable band below the cards, and the privacy note's own margin below. */
+.home-share {
+  display: flex;
+  justify-content: center;
+  margin-top: 36px;
+}
+
+.share-site {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 14px;
+}
+
+.share-site .share-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--accent);
+}
+
+.share-hint {
+  margin: 0;
+}
+
+.share-dialog canvas {
+  display: block;
+  margin: 14px auto 4px;
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+.share-url-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.share-url-row input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  /* Same 16px floor as the settings controls: smaller and mobile Safari
+     zooms the page when the field takes focus. */
+  font-size: 16px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.share-url-row .secondary-button {
+  margin-top: 0;
+  flex: none;
 }
 
 .secondary-button {
@@ -1012,9 +1262,6 @@ details.settings input[type="range"] {
   .site-header {
     min-height: 50px;
     padding: max(11px, env(safe-area-inset-top)) 14px 11px;
-  }
-  .header-note {
-    display: none;
   }
   /* The full name plus the mode badge share ~320px on the smallest phones. */
   .brand {
@@ -1109,6 +1356,12 @@ details.settings input[type="range"] {
   }
   .receiver-heading h1 {
     font-size: 20px;
+  }
+  .preview-zone {
+    /* Shrink-wrap (flex-column parent centers it), so the toast stays
+       centered over a camera box that is now sized by height. */
+    width: auto;
+    max-width: 100%;
   }
   .preview {
     width: auto;

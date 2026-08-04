@@ -20,6 +20,7 @@ import { rewriteStandaloneLinks } from "./build/rewrite-standalone-links";
 import { standaloneCsp } from "./build/standalone-csp";
 import { emitAs } from "./build/emit-as";
 import { rootPwaHead } from "./build/root-pwa-head";
+import { licenseBanner } from "./build/license-banner";
 
 // Where the site is published, used only to make the social-card URLs absolute
 // — scrapers are inconsistent about resolving relative ones. Override with
@@ -95,9 +96,10 @@ export default defineConfig(({ mode }) => {
         htmlTokens(TOKENS),
         useInlineVariants(__dirname),
         inlineZxingWasm(),
-        rewriteStandaloneLinks(),
+        rewriteStandaloneLinks(page),
         standaloneCsp(page),
         viteSingleFile(),
+        licenseBanner(pkg.version),
         emitAs(outDir, `${page}/index.html`, `decimen-${page === "send" ? "sender" : "receiver"}.html`),
       ],
       // Workers are bundled in their own Rollup pass and do not inherit the
@@ -121,7 +123,6 @@ export default defineConfig(({ mode }) => {
         registerType: "autoUpdate",
         // We inject our own registration — see rootPwaHead().
         injectRegister: false,
-        includeAssets: ["success.png", "success-2mb.png"],
         manifest: {
           name: "Decimen Optical Transfer",
           short_name: "Decimen",
@@ -131,7 +132,15 @@ export default defineConfig(({ mode }) => {
           background_color: "#070a11",
           display: "standalone",
           start_url: "./",
-          icons: [{ src: "success.png", sizes: "512x512", type: "image/png", purpose: "any" }],
+          // Real icons, not the demo payload image this once pointed at. The
+          // maskable variant keeps the mark inside the launcher's safe zone;
+          // Android needs 192 + 512 with honest sizes to consider the app
+          // installable at all.
+          icons: [
+            { src: "icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+            { src: "icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+            { src: "icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          ],
         },
         workbox: {
           // Without this a rebuilt site serves stale pages indefinitely.
@@ -147,9 +156,27 @@ export default defineConfig(({ mode }) => {
           // app offline, so it has to be allowed past the default size limit.
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
           globPatterns: ["**/*.{js,css,html,wasm,png,svg}"],
+          // Received media plays from the Cache API at a real URL: iOS Safari
+          // will not reliably play a blob: URL handed to <video>/<audio>, but
+          // WebKit's media loader is happy with ranged HTTP responses. The
+          // receiver fills this cache (see servableMediaUrl in receive/main.ts)
+          // and workbox's rangeRequests plugin answers AVFoundation's Range
+          // probes from it.
+          runtimeCaching: [
+            {
+              urlPattern: /\/received-media\//,
+              handler: "CacheOnly" as const,
+              options: {
+                cacheName: "received-media",
+                rangeRequests: true,
+                matchOptions: { ignoreSearch: true },
+              },
+            },
+          ],
         },
       }),
       rootPwaHead(),
+      licenseBanner(pkg.version),
     ],
     build: {
       rollupOptions: {

@@ -1,7 +1,7 @@
 {
   "name": "decimen-optical-transfer",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "MIT",
   "description": "Offline file and text transfer using fountain-coded animated QR codes — screen to camera, no network.",
   "type": "module",
@@ -9,13 +9,15 @@
     "dev": "vite",
     "serve": "npm run build && vite preview",
     "demo": "vite --mode demo",
-    "build": "tsc && vite build",
+    "build": "tsc && tsc -p tsconfig.node.json && vite build",
     "build:standalone": "node -e \"require('node:fs').rmSync('dist-standalone',{recursive:true,force:true})\" && tsc && vite build --mode standalone-send && vite build --mode standalone-receive",
     "build:all": "npm run build && npm run build:standalone",
     "preview": "vite preview",
+    "icons": "node --import tsx build/make-icons.ts",
     "test": "node --import tsx --test tests/*.test.ts"
   },
   "devDependencies": {
+    "@types/node": "^26.1.2",
     "@types/qrcode": "^1.5.5",
     "@vitejs/plugin-basic-ssl": "^1.2.0",
     "qrcode": "^1.5.4",

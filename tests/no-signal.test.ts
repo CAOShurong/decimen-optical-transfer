@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { NoSignalHintTimer } from "../shared/no-signal.ts";
 
-const DELAY = 10_000;
-const timer = () => new NoSignalHintTimer(DELAY);
+const DELAY = 8_000;
+const REDELAY = 15_000;
+const timer = () => new NoSignalHintTimer(DELAY, REDELAY);
 
 test("nothing fires before the camera starts", () => {
   const t = timer();
@@ -25,7 +26,7 @@ test("it fires once, after the delay, and not again on its own", () => {
   }
 });
 
-test("dismissing hides it and restarts the countdown", () => {
+test("dismissing hides it and restarts the countdown on the longer delay", () => {
   const t = timer();
   t.cameraStarted(0);
   assert.equal(t.tick(DELAY + 1), true);
@@ -33,20 +34,34 @@ test("dismissing hides it and restarts the countdown", () => {
   t.dismiss(DELAY + 1);
   assert.equal(t.isVisible, false);
 
-  assert.equal(t.tick(DELAY + 5_000), false, "still inside the second countdown");
-  assert.equal(t.tick(2 * DELAY + 2), true, "comes back a full delay after dismissal");
+  assert.equal(t.tick(DELAY + 1 + DELAY + 1), false, "the first delay no longer applies");
+  assert.equal(t.tick(DELAY + 1 + REDELAY), false, "not at exactly the longer delay");
+  assert.equal(t.tick(DELAY + 1 + REDELAY + 1), true, "comes back after the longer delay");
   assert.equal(t.isVisible, true);
 });
 
 test("it keeps coming back for as long as nothing decodes", () => {
   const t = timer();
   t.cameraStarted(0);
-  let now = 0;
-  for (let round = 1; round <= 5; round++) {
-    now += DELAY + 1;
+  let now = DELAY + 1;
+  assert.equal(t.tick(now), true, "first round did not fire");
+  t.dismiss(now);
+  for (let round = 2; round <= 5; round++) {
+    now += REDELAY + 1;
     assert.equal(t.tick(now), true, `round ${round} did not re-arm`);
     t.dismiss(now);
   }
+});
+
+test("a camera restart after a dismissal goes back to the short delay", () => {
+  const t = timer();
+  t.cameraStarted(0);
+  assert.equal(t.tick(DELAY + 1), true);
+  t.dismiss(DELAY + 1);
+
+  t.cameraStarted(30_000);
+  assert.equal(t.tick(30_000 + DELAY - 1), false);
+  assert.equal(t.tick(30_000 + DELAY + 1), true, "a fresh attempt uses the fresh-attempt delay");
 });
 
 test("the first decoded frame ends it for good", () => {

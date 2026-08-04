@@ -20,15 +20,24 @@ const BRAND_INNER =
  * Rewrites are exact-match and `required` ones throw when they miss, so editing
  * the markup breaks the build rather than silently shipping broken links.
  */
-export function rewriteStandaloneLinks(): Plugin {
+export function rewriteStandaloneLinks(page: "send" | "receive"): Plugin {
   const rules: { from: string; to: string; required: boolean }[] = [
+    {
+      // The Send/Receive switcher would be two dead links here; collapse it to
+      // the badge naming the one mode this file is.
+      from:
+        '<nav class="mode-nav" aria-label="Mode">' +
+        '<a href="../send/">Send</a><a href="../receive/">Receive</a></nav>',
+      to: `<span class="mode-badge">${page === "send" ? "Send" : "Receive"}</span>`,
+      required: true,
+    },
     {
       from: `<a class="brand" href="../">${BRAND_INNER}</a>`,
       to: `<span class="brand">${BRAND_INNER}</span>`,
       required: true,
     },
     {
-      from: 'Open <a href="../receive/">Receive</a> on the other device.',
+      from: "Open Receive on the other device.",
       to: "Open the standalone receiver on the other device.",
       required: false,
     },
@@ -37,6 +46,12 @@ export function rewriteStandaloneLinks(): Plugin {
       // link in would be the one external reference in a page whose whole point
       // is having none.
       from: '<link rel="icon" href="../decimen_logo.svg" type="image/svg+xml" />',
+      to: "",
+      required: true,
+    },
+    {
+      // Same rule for the home-screen icon: no siblings to load it from.
+      from: '<link rel="apple-touch-icon" href="../apple-touch-icon.png" />',
       to: "",
       required: true,
     },

@@ -5,10 +5,11 @@
  * wrong, and the panel itself is a handful of createElement calls.
  *
  * The rules:
- * - The countdown starts when the camera does.
- * - Dismissing the hint only restarts the countdown. Tapping a button does not
- *   make frames start arriving, so if the transfer is still dead a moment later
- *   the advice is still the advice.
+ * - The countdown starts when the camera does, on the short first delay.
+ * - Dismissing the hint restarts the countdown on the longer delay: tapping a
+ *   button does not make frames start arriving, so it does come back — but the
+ *   user has already read the advice once, so it stops leaning on them.
+ * - A camera restart is a fresh attempt, so it goes back to the short delay.
  * - The first frame that parses ends it for good, dismissed or not. That is the
  *   only event that actually means the link is working.
  */
@@ -18,10 +19,16 @@ export class NoSignalHintTimer {
   // timer silently dead for any clock that happens to start there.
   private armed = false;
   private armedAt = 0;
+  private delayMs: number;
   private visible = false;
   private sawFrame = false;
 
-  constructor(private readonly delayMs: number) {}
+  constructor(
+    private readonly firstDelayMs: number,
+    private readonly dismissedDelayMs: number,
+  ) {
+    this.delayMs = firstDelayMs;
+  }
 
   get isVisible(): boolean {
     return this.visible;
@@ -32,6 +39,7 @@ export class NoSignalHintTimer {
     if (this.sawFrame) return;
     this.armed = true;
     this.armedAt = now;
+    this.delayMs = this.firstDelayMs;
     this.visible = false;
   }
 
@@ -47,10 +55,12 @@ export class NoSignalHintTimer {
     return true;
   }
 
-  /** The user dismissed it. Off screen, but the countdown restarts. */
+  /** The user dismissed it. Off screen, but the countdown restarts — on the
+   *  longer leash from here on. */
   dismiss(now: number): void {
     this.visible = false;
     this.armedAt = now;
+    this.delayMs = this.dismissedDelayMs;
   }
 
   /** A frame parsed. Returns whether the hint was on screen and needs removing. */

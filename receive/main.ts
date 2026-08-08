@@ -34,6 +34,7 @@ import { statusLine } from "../shared/status-line";
 import { requestScreenWakeLock } from "../shared/wake-lock";
 import { applyAdvancedConstraint, probeCameraCapabilities } from "../shared/platform";
 import { closeOnBackdropClick } from "../shared/dialog";
+import { cameraChoices, cameraTrackConstraints } from "./camera-selection";
 
 const startBtn = document.getElementById("start") as HTMLButtonElement;
 const video = document.getElementById("video") as HTMLVideoElement;
@@ -48,6 +49,7 @@ const result = document.getElementById("result")!;
 const metricsEl = document.getElementById("metrics")!;
 const diagnosticsEl = document.getElementById("diagnostics") as HTMLDetailsElement | null;
 const settingsEl = document.getElementById("settings")!;
+const cfgCamera = document.getElementById("cfg-camera") as HTMLSelectElement;
 const cfgWidth = document.getElementById("cfg-width") as HTMLSelectElement;
 const cfgCapFps = document.getElementById("cfg-capfps") as HTMLSelectElement;
 const cfgWorkers = document.getElementById("cfg-workers") as HTMLSelectElement;
@@ -158,15 +160,20 @@ async function start() {
   }
   const captureWidth = Number(cfgWidth.value);
   const captureFps = Number(cfgCapFps.value);
+  const selectedDeviceId = cfgCamera.value;
   // Nothing on the page changes until the camera is actually running: the
   // error paths below all have to leave a usable Start button behind.
   startBtn.disabled = true;
   startBtn.textContent = "Starting…";
-  const base: MediaTrackConstraints = {
-    facingMode: "environment",
-    width: { ideal: captureWidth },
-    height: { ideal: Math.round((captureWidth * 3) / 4) },
-  };
+  cfgCamera.disabled = true;
+
+  // A camera change is a restart of capture, not of the transfer. Invalidate
+  // the old frame callback before stopping its track so it cannot keep feeding
+  // stale frames to the decoder while getUserMedia negotiates the new lens.
+  captureGen++;
+  stream?.getTracks().forEach((track) => track.stop());
+  stream = null;
+  const base = cameraTrackConstraints(selectedDeviceId, captureWidth);
   try {
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -180,6 +187,7 @@ async function start() {
       });
     }
   } catch (err) {
+    cfgCamera.disabled = false;
     const denied = err instanceof DOMException && err.name === "NotAllowedError";
     offerRetry(
       denied
@@ -196,6 +204,8 @@ async function start() {
   if (diagnosticsEl) diagnosticsEl.style.display = "block";
   video.srcObject = stream;
   await video.play().catch(() => undefined);
+  await refreshCameraOptions();
+  cfgCamera.disabled = false;
   const settings = stream.getVideoTracks()[0]?.getSettings();
   setStatus(
     `camera ${settings?.width}×${settings?.height}@${settings?.frameRate} — searching for a stream…`,
@@ -209,13 +219,33 @@ async function start() {
     for (const el of [cfgWidth, cfgCapFps, cfgWorkers]) {
       el.addEventListener("change", () => void applyReceiveSettings());
     }
+    cfgCamera.addEventListener("change", () => void start());
   }
 
   noSignal.cameraStarted(performance.now());
   captureGen++;
   scheduleFrame(captureGen);
-  statsTimer = setInterval(updateStats, 500);
+  statsTimer ??= setInterval(updateStats, 500);
   await requestScreenWakeLock();
+}
+
+/** Camera labels are hidden until permission has been granted. Refresh after
+ *  the first successful stream so multi-lens phones expose useful names, while
+ *  keeping "Automatic" selected when the browser made the initial choice. */
+async function refreshCameraOptions() {
+  if (!navigator.mediaDevices?.enumerateDevices) return;
+  const selected = cfgCamera.value;
+  try {
+    const choices = cameraChoices(await navigator.mediaDevices.enumerateDevices());
+    cfgCamera.replaceChildren(new Option("Automatic rear camera", ""));
+    for (const choice of choices) {
+      cfgCamera.add(new Option(choice.label, choice.deviceId));
+    }
+    cfgCamera.value = choices.some((choice) => choice.deviceId === selected) ? selected : "";
+  } catch {
+    // A working stream matters more than a selector. Some privacy-hardened
+    // browsers allow getUserMedia but refuse device enumeration.
+  }
 }
 
 /** Report what the camera actually negotiated — iOS in particular will happily
@@ -224,11 +254,12 @@ function reportCameraSettings() {
   const track = stream?.getVideoTracks()[0];
   if (!track) return;
   const s = track.getSettings();
+  const cameraName = track.label ? `${track.label} · ` : "";
   const askedFps = Number(cfgCapFps.value);
   const gotFps = Math.round(s.frameRate ?? 0);
   const fpsNote = gotFps && gotFps !== askedFps ? ` (asked ${askedFps})` : "";
   cameraActual.textContent =
-    `camera ${s.width}×${s.height} @ ${gotFps} fps${fpsNote} · ${pool.size} decode ` +
+    `${cameraName}${s.width}×${s.height} @ ${gotFps} fps${fpsNote} · ${pool.size} decode ` +
     `worker${pool.size === 1 ? "" : "s"} · changes apply live`;
 }
 

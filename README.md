@@ -1,5 +1,12 @@
 # Decimen Optical Transfer: fountain-coded QR file transfer
 
+> **Camera-choice fork.** This fork adds an explicit camera/lens selector for
+> phones that open the front or telephoto camera instead of the useful rear
+> lens. It is based on Evan Crawley's original MIT-licensed
+> [Decimen Optical Transfer](https://github.com/bashalarmistalt/decimen-optical-transfer)
+> and responds to upstream reports [#16](https://github.com/bashalarmistalt/decimen-optical-transfer/issues/16)
+> and [#23](https://github.com/bashalarmistalt/decimen-optical-transfer/issues/23).
+
 Send a file between two devices using nothing but a **screen and a camera**.
 One page displays the file as an endless stream of animated QR codes; another
 device points its camera at it and reconstructs the file. **No network path
@@ -8,11 +15,15 @@ The payload travels as light.
 
 ## Try it
 
-### **→ [decimen.app](https://decimen.app/)**
+### **→ [Try the camera-choice fork](https://caoshurong.github.io/decimen-optical-transfer/)**
 
 Open it on both devices and go — nothing to install. Works offline after the
 first visit, and installs as an app on both iOS and Android if you want it on
 a home screen.
+
+After camera permission is granted, open **Receive settings → camera** to see
+and switch between the lenses exposed by the browser. The transfer decoder
+keeps its progress while the camera restarts.
 
 Files up to 64 MB (or a pasted text snippet), filename and media type
 preserved, gzip only when it helps, SHA-256 verified before anything is

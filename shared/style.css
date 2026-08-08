@@ -313,6 +313,10 @@ details.settings label {
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
+
+details.settings label.camera-choice {
+  flex: 1 1 100%;
+}
 details.settings select,
 details.settings input[type="range"] {
   font: inherit;

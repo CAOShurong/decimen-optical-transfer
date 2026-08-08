@@ -18,10 +18,18 @@ Progress counts **frames collected**, not blocks solved — fountain decoding ba
 
 ## Receive settings
 
-Applied live while the camera runs; a device that refuses a live reconfigure (iOS, sometimes) keeps the current stream and says so. Frame rates the camera reports it cannot reach are grayed out.
+After permission is granted, the **camera** menu lists the video inputs exposed
+by the browser. Choose a different entry if the phone selected its front,
+telephoto, or macro camera. Switching cameras restarts capture but keeps any
+transfer frames already decoded.
+
+The other settings are applied live while the camera runs; a device that
+refuses a live reconfigure (iOS, sometimes) keeps the current stream and says
+so. Frame rates the camera reports it cannot reach are grayed out.
 
 | setting | default | notes |
 |---|---|---|
+| camera | automatic rear camera | select an exact lens after permission reveals labels |
 | capture width | 1280 | 1920 costs decode time; 960 helps weak CPUs |
 | capture fps | 60 | iOS delivers 30 unless the exact rate is demanded — the app handles this |
 | decode workers | 2 | one WASM decoder per worker; busy workers drop frames, which the fountain absorbs |

@@ -1,20 +1,22 @@
-# Contributing
+# Contributing to the camera-choice fork
 
-**I am not accepting pull requests at this time.** This is a proof of concept
-with a deliberately small surface, and I don't have the bandwidth to review
-contributions properly. If you open one, I'll close it.
+Focused bug reports and pull requests are welcome here, especially fixes for
+device, browser, and multi-camera behavior. For a camera bug, include the
+browser, OS, device model, selected camera label, and capture resolution;
+screen-to-camera behavior varies substantially across hardware.
 
-## What is welcome
+Before opening a pull request:
 
-**Bug reports**, especially device/browser/camera combinations where the
-receiver fails to decode. Include browser, OS, device model, and capture
-resolution — screen-to-camera behavior varies enormously across hardware.
+1. Keep the change narrow and explain the user-visible failure it solves.
+2. Run `npm test` and `npm run build:all`.
+3. Add or update a test when the behavior can be exercised without physical
+   camera hardware.
+4. Do not weaken the protocol, file-integrity, or size-limit checks.
 
-**Questions** about how it works. Open an issue.
+## Relationship to upstream
 
-**Forks.** MIT licensed. Build something better on top of it.
-
-## Existing pull requests
-
-[#2](https://github.com/bashalarmistalt/decimen-optical-transfer/pull/2) was
-opened before this policy and is unaffected. This applies to new ones.
+This repository is an MIT-licensed fork of
+[`bashalarmistalt/decimen-optical-transfer`](https://github.com/bashalarmistalt/decimen-optical-transfer).
+The upstream project currently asks contributors to file bug reports or make
+forks instead of opening new pull requests. Please do not redirect a pull
+request from this fork to upstream unless that policy changes.

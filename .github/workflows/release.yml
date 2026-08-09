@@ -38,6 +38,9 @@ jobs:
           # The two self-contained pages: no server, no network, no install.
           cp dist-standalone/decimen-sender.html "artifacts/decimen-$TAG-sender.html"
           cp dist-standalone/decimen-receiver.html "artifacts/decimen-$TAG-receiver.html"
+          # Installable, dependency-free terminal sender. `npm pack` runs the
+          # same prepack build that the cross-platform lifecycle test verifies.
+          npm pack --pack-destination artifacts
           (cd artifacts && sha256sum ./* > SHA256SUMS.txt)
           ls -la artifacts
 

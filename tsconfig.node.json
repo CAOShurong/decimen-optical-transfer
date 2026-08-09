@@ -15,5 +15,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["build", "vite.config.ts"]
+  "include": ["build", "cli", "vite.config.ts"]
 }

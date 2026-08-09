@@ -9,7 +9,7 @@
     <title>Decimen Optical Transfer — transfer files with light</title>
     <meta
       name="description"
-      content="Send a file or text between two devices with nothing but a screen and a camera. Fountain-coded animated QR codes, no network path in between."
+      content="Send a file or text from a browser or terminal with nothing but a screen and a camera. Fountain-coded animated QR codes, no network path in between."
     />
     <meta name="theme-color" content="#070a11" />
 
@@ -47,8 +47,9 @@
       <section class="hero">
         <h1>Transfer files<br />with light.</h1>
         <p class="hero-copy">
-          Send a file or a block of text from one screen to another device's camera.
-          No account, pairing, cloud storage, or network path between devices.
+          Send a file or a block of text from a browser or terminal to another
+          device's camera. No account, pairing, cloud storage, or receiver-side
+          network path.
         </p>
       </section>
 
@@ -74,6 +75,24 @@
             <a class="action" href="./receive/">Receive <svg class="action-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v15"/><path d="M5 12l7 7 7-7"/></svg></a>
           </div>
         </article>
+      </section>
+
+      <section class="terminal-callout" aria-labelledby="terminal-title">
+        <div class="terminal-copy">
+          <p class="card-kicker">New · terminal sender</p>
+          <h2 id="terminal-title">No browser on the sending machine?</h2>
+          <p>
+            Install one bundled command and transmit files, stdin, or text from
+            SSH and terminal-only systems. It speaks the same verified fountain
+            protocol as this web receiver.
+          </p>
+        </div>
+        <div class="terminal-example">
+          <code><span aria-hidden="true">$ </span>decimen send ./backup.tar.gz</code>
+          <a href="https://github.com/CAOShurong/decimen-optical-transfer/releases/tag/v%APP_VERSION%">
+            Install the CLI <span aria-hidden="true">↗</span>
+          </a>
+        </div>
       </section>
 
       <div class="home-share">
@@ -109,7 +128,7 @@
     <footer class="site-footer">
       <span class="footer-id">
         <span>Decimen Optical Transfer</span>
-        <span>v%APP_VERSION% · build %BUILD_ID% · © 2026 Evan Crawley (Bash Alarmist) · <a href="https://github.com/bashalarmistalt/decimen-optical-transfer/blob/main/LICENSE">MIT</a></span>
+        <span>v%APP_VERSION% · build %BUILD_ID% · © 2026 Evan Crawley (Bash Alarmist) · field fork by <a href="https://github.com/CAOShurong">CAOShurong</a> · <a href="https://github.com/CAOShurong/decimen-optical-transfer/blob/main/LICENSE">MIT</a></span>
       </span>
       <nav class="footer-links" aria-label="Project links">
         <a href="https://github.com/CAOShurong/decimen-optical-transfer">GitHub</a>

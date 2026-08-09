@@ -3,6 +3,7 @@
 ## Using Decimen
 
 - [Quick start](user/quick-start.md) — two devices, one minute.
+- [Terminal sender](user/terminal-sender.md) — files, stdin, and text from SSH or browserless machines.
 - [Sending](user/sending.md) — files, text snippets, transfer settings, fullscreen, sharing.
 - [Receiving](user/receiving.md) — camera, settings, what happens when a transfer lands.
 - [Troubleshooting](user/troubleshooting.md) — when nothing decodes.

@@ -2,6 +2,21 @@
 
 This fork follows the upstream wire format and records fork-specific releases here.
 
+## [0.4.0-field.1] - 2026-08-09
+
+### Added
+
+- Installable `decimen` terminal sender for files, binary stdin, UTF-8 text, and SSH/browserless machines.
+- ANSI half-block QR renderer, automatic terminal fitting, finite-frame capture mode, explicit FPS/ECC/frame-size controls, and JSON dry-run plans.
+- Direct reuse of the browser container and fountain wire format, including gzip, SHA-256, 64 MB bounds, fixed QR mask/version, and receiver-compatible frames.
+- Cross-platform package lifecycle verification on Ubuntu, Windows, and macOS, including a fresh install and a real rendered frame.
+- Terminal sender guide, bundled dependency notices, and CLI release archive with checksums.
+
+### Security
+
+- Strip control characters and path components from filenames before they can reach terminal status output.
+- Bound stdin before concatenation and prevent endless QR output when stdout is not interactive.
+
 ## [0.3.2-camera.1] - 2026-08-09
 
 ### Security
@@ -25,3 +40,4 @@ which addresses
 
 [0.3.2-camera.1]: https://github.com/CAOShurong/decimen-optical-transfer/releases/tag/v0.3.2-camera.1
 [0.3.1-camera.1]: https://github.com/CAOShurong/decimen-optical-transfer/releases/tag/v0.3.1-camera.1
+[0.4.0-field.1]: https://github.com/CAOShurong/decimen-optical-transfer/releases/tag/v0.4.0-field.1

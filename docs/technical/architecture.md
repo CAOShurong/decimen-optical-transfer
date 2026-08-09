@@ -1,6 +1,9 @@
 # Architecture
 
-Three pages, one shared core, a handful of single-purpose build plugins. No framework, no state library — each page is one TypeScript module wiring DOM to the shared code.
+Three pages and one terminal command share a single protocol core. No framework
+or state library is involved: each browser page is a TypeScript module wiring
+DOM to shared code, while `cli/` wires Node streams and ANSI output to the same
+container and fountain encoder.
 
 ## Pages
 
@@ -9,6 +12,19 @@ Three pages, one shared core, a handful of single-purpose build plugins. No fram
 | `/` | home: cards, share dialog | `home/main.ts` |
 | `send/` | file/snippet → fountain-coded QR stream on a canvas | `send/main.ts` |
 | `receive/` | camera → WASM QR decode in workers → fountain decoder → file | `receive/main.ts`, `receive/worker.ts` |
+
+## Terminal sender (`cli/`)
+
+- `index.ts` — bounded file/stdin input, transfer planning, TTY lifecycle, and frame timing.
+- `options.ts` — strict dependency-free command parsing and help.
+- `fit.ts` — binary-searches QR capacity to fit the current terminal dimensions.
+- `terminal.ts` — renders two square QR modules per character row using ANSI colours and a half block.
+- `transfer.ts` — adapts the shared container/fountain protocol to fixed-version QR frames.
+- `mime.ts` — conservative extension-to-media-type mapping with a binary fallback.
+
+`build/build-cli.ts` bundles those modules plus node-qrcode's core into one Node
+22 ESM executable. It deliberately imports the QR core rather than the package's
+PNG and command-line layers, keeping the install archive small and dependency-free.
 
 ## Shared modules (`shared/`)
 
@@ -38,4 +54,5 @@ One file each, exact-match string surgery that **throws when it misses** — mar
 - `standalone-csp.ts`, `emit-as.ts` — standalone CSP and output naming.
 - `make-icons.ts` — regenerates `public/` icons from the logo (`npm run icons`, needs librsvg).
 
-Typechecking: `tsconfig.json` covers the pages and `shared/`; `tsconfig.node.json` covers `build/` and `vite.config.ts` (both run in `npm run build`).
+Typechecking: `tsconfig.json` covers the pages and `shared/`; `tsconfig.node.json`
+covers `build/`, `cli/`, and `vite.config.ts` (all run in `npm run build`).

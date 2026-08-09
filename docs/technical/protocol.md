@@ -20,6 +20,16 @@ Inside the fountain payload, a container preserves filename, media type, optiona
 
 ## QR layer
 
-Error correction stays at L: in-frame ECC and the fountain solve different problems (corruption vs erasure), and at these frame sizes "decode whole or discard" plus fountain redundancy is the better trade. The mask pattern is pinned (any declared mask is valid to a decoder), skipping the spec's 8-way mask evaluation for ~4× faster generation.
+The browser sender and terminal CLI default to error correction L: in-frame ECC
+and the fountain solve different problems (corruption vs erasure), and at these
+frame sizes "decode whole or discard" plus fountain redundancy is usually the
+better trade. The CLI can select M, Q, or H for damaged displays at the cost of
+capacity. QR error correction and version are not fields in the Decimen frame;
+any standards-compliant reader recovers the same bytes.
+
+The mask pattern is pinned (any declared mask is valid to a decoder), skipping
+the specification's 8-way mask evaluation for roughly 4× faster generation.
+Every terminal animation also pins the QR version from its first frame so the
+code never changes physical dimensions mid-transfer.
 
 Golden wire-format vectors live in `tests/` — the encoder and decoder are held to fixed bytes, not just to each other.

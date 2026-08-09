@@ -681,6 +681,76 @@ details.settings input[type="range"] {
   transform: translateY(4px);
 }
 
+.terminal-callout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
+  align-items: center;
+  gap: clamp(24px, 5vw, 72px);
+  margin-top: 16px;
+  padding: clamp(24px, 4vw, 42px);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background:
+    linear-gradient(110deg, rgba(var(--accent-rgb), 0.08), transparent 42%),
+    var(--panel);
+}
+
+.terminal-callout h2 {
+  margin: 0 0 12px;
+  color: var(--text);
+  font-size: clamp(21px, 2.6vw, 31px);
+  line-height: 1.15;
+  letter-spacing: -0.035em;
+}
+
+.terminal-callout p:not(.card-kicker) {
+  max-width: 650px;
+  margin: 0;
+  color: var(--muted);
+}
+
+.terminal-example {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.terminal-example code {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 16px 18px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line-bright);
+  border-radius: 9px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.terminal-example code span {
+  color: var(--accent);
+}
+
+.terminal-example a {
+  align-self: flex-start;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.terminal-example a:hover,
+.terminal-example a:focus-visible {
+  color: var(--accent-hi);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
 .action:focus-visible {
   outline: 2px solid var(--text);
   outline-offset: 3px;
@@ -1322,6 +1392,15 @@ details.settings input[type="range"] {
   .action-arrow {
     width: 18px;
     height: 18px;
+  }
+  .terminal-callout {
+    grid-template-columns: 1fr;
+    gap: 20px;
+    padding: 22px 18px;
+    border-radius: 14px;
+  }
+  .terminal-callout h2 {
+    font-size: 22px;
   }
   .send-shell {
     width: calc(100% - 24px);

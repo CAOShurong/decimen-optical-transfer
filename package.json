@@ -1,25 +1,54 @@
 {
   "name": "decimen-optical-transfer",
   "private": true,
-  "version": "0.3.2-camera.1",
+  "version": "0.4.0-field.1",
   "license": "MIT",
   "description": "Offline file and text transfer using fountain-coded animated QR codes — screen to camera, no network.",
+  "keywords": [
+    "air-gap",
+    "fountain-code",
+    "offline",
+    "qr-code",
+    "terminal"
+  ],
+  "homepage": "https://caoshurong.github.io/decimen-optical-transfer/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CAOShurong/decimen-optical-transfer.git"
+  },
+  "bugs": "https://github.com/CAOShurong/decimen-optical-transfer/issues",
   "type": "module",
+  "bin": {
+    "decimen": "dist-cli/decimen.js"
+  },
+  "files": [
+    "dist-cli/",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "vite",
     "serve": "npm run build && vite preview",
     "demo": "vite --mode demo",
-    "build": "tsc && tsc -p tsconfig.node.json && vite build",
+    "build": "tsc && tsc -p tsconfig.node.json && vite build && npm run build:cli",
+    "build:cli": "node --import tsx build/build-cli.ts",
     "build:standalone": "node -e \"require('node:fs').rmSync('dist-standalone',{recursive:true,force:true})\" && tsc && vite build --mode standalone-send && vite build --mode standalone-receive",
     "build:all": "npm run build && npm run build:standalone",
     "preview": "vite preview",
     "icons": "node --import tsx build/make-icons.ts",
-    "test": "node --import tsx --test tests/*.test.ts"
+    "test": "node --import tsx --test tests/*.test.ts",
+    "verify:cli-package": "node --import tsx build/verify-cli-package.ts",
+    "prepack": "npm run build:cli"
   },
   "devDependencies": {
     "@types/node": "^26.1.2",
     "@types/qrcode": "^1.5.5",
     "@vitejs/plugin-basic-ssl": "^1.2.0",
+    "esbuild": "^0.25.12",
     "qrcode": "^1.5.4",
     "tsx": "4.20.6",
     "typescript": "^5.5.0",

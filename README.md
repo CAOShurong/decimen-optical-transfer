@@ -40,6 +40,11 @@ Neither mode is encrypted: whatever is on the sending screen is readable by
 any camera pointed at it. The property this gives you is no network, not
 confidentiality — see [privacy](docs/user/privacy.md).
 
+The receiver treats every scanned frame as untrusted input. Release
+`v0.3.2-camera.1` rejects inconsistent length headers before allocating a
+decoder buffer; use the latest release and see [SECURITY.md](SECURITY.md) for
+the supported-version and reporting policy.
+
 ## Documentation
 
 **Using it** — [quick start](docs/user/quick-start.md) ·

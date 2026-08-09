@@ -1,0 +1,61 @@
+name: Feature request
+description: Propose a concrete field, terminal, camera, or transfer improvement
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Strong requests start with the job that is difficult today. A small
+        reproducible use case is more useful than a long solution pitch.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the sending machine, receiving device, environment, and why the current path fails.
+      placeholder: I need to move a signed log bundle from an SSH-only machine to a phone that cannot join its network...
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-workaround
+    attributes:
+      label: What do you do today?
+      description: Include another tool or manual workaround if one exists.
+
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What would a successful result look like?
+      description: State the observable result, not just a preferred implementation.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Main surface
+      options:
+        - Terminal CLI
+        - Browser sender
+        - Browser receiver / camera
+        - Optical protocol / interoperability
+        - Packaging, offline use, or deployment
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints or evidence
+      description: File sizes, terminal dimensions, devices, browsers, photos, logs, related projects, or protocol limits.
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Scope check
+      options:
+        - label: I understand that the optical channel is not encrypted.
+          required: true

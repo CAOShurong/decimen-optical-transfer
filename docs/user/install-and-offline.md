@@ -1,12 +1,17 @@
 # Install & offline
 
-Three shapes, all built from the same source. Built artifacts for all three are attached to every [release](../../../../releases).
+Four shapes, all built from the same source. Packaged artifacts are attached to
+every [field-fork release](https://github.com/CAOShurong/decimen-optical-transfer/releases).
 
 | | what it is | needs a server? | offline |
 |---|---|---|---|
-| **Hosted site** | three pages plus a service worker — live at [decimen.app](https://decimen.app/) | yes, any static host | after the first visit |
+| **Hosted site** | three pages plus a service worker — live at the [field-use fork](https://caoshurong.github.io/decimen-optical-transfer/) | yes, any static host | after the first visit |
+| **Terminal CLI** | bundled `decimen` command for Node 22+ | no web server | always |
 | **`decimen-sender.html`** | one file, ~55 KB | no | always |
 | **`decimen-receiver.html`** | one file, ~1.3 MB | see the caveat | always |
+
+The CLI archive and all three browser artifacts are attached to each field-fork
+release. See [Terminal sender](terminal-sender.md) for installation and tuning.
 
 ## Hosted site: install and offline
 

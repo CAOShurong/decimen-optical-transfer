@@ -7,15 +7,19 @@ npm run dev               # https dev server with HMR (self-signed cert)
 npm run serve             # build, then serve the production bundle
 npm run demo              # dev server with VITE_DEMO=1 — sender locked to bundled payloads
 npm test                  # golden wire-format vectors and unit tests (node --test via tsx)
-npm run build             # typecheck (app + node configs), hosted site → dist/
+npm run build             # typecheck, hosted site → dist/, CLI → dist-cli/
+npm run build:cli         # bundled Node 22 terminal sender → dist-cli/
 npm run build:standalone  # both self-contained pages → dist-standalone/
 npm run build:all         # everything
+npm run verify:cli-package # npm pack → empty install → version/plan/real-frame smoke
 npm run icons             # regenerate public/ icons from the logo (needs librsvg)
 ```
 
 `npm run icons` strips the logo SVG's comments before rasterizing (a `--` inside a comment is invalid XML that browsers tolerate but librsvg rejects) and does exact-match surgery on the markup, throwing if the logo changes shape.
 
-`VITE_SITE_URL` overrides the published URL baked into social cards and the share dialogs (default `https://decimen.app/`, trailing slash required).
+`VITE_SITE_URL` overrides the published URL baked into social cards and the
+share dialogs (this fork's production build sets its GitHub Pages URL; a custom
+deployment must include a trailing slash).
 
 ## PWA / service worker
 
@@ -23,9 +27,9 @@ npm run icons             # regenerate public/ icons from the logo (needs librsv
 
 ## CI (`.github/workflows`)
 
-- **`ci.yml`** — tests and builds on every push to `main` / `release/*` and every PR. Asserts the served `receive` chunk stays under 20 KB (catches the inlined worker/wasm leaking into the site build) and that manifest/SW references point at files that exist.
+- **`ci.yml`** — tests and builds on every push to `main` / `release/*` and every PR. Asserts the served `receive` chunk stays under 20 KB (catches the inlined worker/wasm leaking into the site build) and that manifest/SW references point at files that exist. A separate Ubuntu/Windows/macOS matrix packs and fresh-installs the CLI, then checks its version, JSON plan, and one real ANSI frame.
 - **`pages.yml`** — deploys to GitHub Pages on every push to `main`.
-- **`release.yml`** — on a `v*` tag: builds everything, attaches `decimen-<tag>-site.zip`, both standalone files, and `SHA256SUMS.txt`.
+- **`release.yml`** — on a `v*` tag: builds everything, attaches `decimen-<tag>-site.zip`, both standalone files, the installable CLI `.tgz`, and `SHA256SUMS.txt`.
 
 The site builds with `base: "./"`, so it works under a project subpath with no configuration.
 

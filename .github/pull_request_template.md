@@ -1,17 +1,21 @@
-<!--
-Please read this before spending any more time on the PR.
+## What changed
 
-**I am not accepting pull requests.** This is a proof of concept with a
-deliberately small surface, and I don't have the bandwidth to review
-contributions properly. This one will be closed unread — that is not a
-judgement of the work, it's the policy, and it applies to everyone.
+<!-- Describe the user-visible problem and the smallest useful solution. -->
 
-What is welcome instead:
+## How it was verified
 
-- **Bug reports**, especially device/browser/camera combinations where the
-  receiver fails to decode. There's an issue template for it.
-- **Questions** about how any of it works. Open an issue.
-- **Forks.** MIT licensed. Build something better on top of it.
+<!-- List exact tests, devices, browsers, terminals, or package installs. -->
 
-See CONTRIBUTING.md.
--->
+- [ ] `npm test`
+- [ ] `npm run build:all`
+- [ ] I tested the affected public artifact or explained why that is not applicable.
+
+## Compatibility and safety
+
+- [ ] I did not change the optical wire format. If I did, I documented the versioning and old-artifact impact explicitly.
+- [ ] I treated QR frames, filenames, media types, stdin, and claimed lengths as untrusted where applicable.
+- [ ] I updated user or technical documentation for behavior people need to understand.
+
+## Attribution
+
+<!-- Link the issue, upstream discussion/commit, or prior implementation when applicable. -->

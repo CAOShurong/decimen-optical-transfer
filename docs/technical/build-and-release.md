@@ -12,6 +12,7 @@ npm run build:cli         # bundled Node 22 terminal sender → dist-cli/
 npm run build:standalone  # both self-contained pages → dist-standalone/
 npm run build:all         # everything
 npm run verify:cli-package # npm pack → empty install → version/plan/real-frame smoke
+npm run preview:terminal   # regenerate the README's real-frame terminal SVG
 npm run icons             # regenerate public/ icons from the logo (needs librsvg)
 ```
 

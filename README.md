@@ -57,6 +57,11 @@ The QR size adapts to the terminal, including a classic 80×24 SSH window. Use
 footprint, and nominal capture time before displaying anything. Full guide:
 [terminal sender](docs/user/terminal-sender.md).
 
+<p align="center">
+  <img src="docs/terminal-sender.svg" width="900"
+       alt="Decimen terminal sender showing a real fountain-coded QR frame beside the command decimen send backup.tar.gz" />
+</p>
+
 Files up to 64 MB (or a pasted text snippet), filename and media type
 preserved, gzip only when it helps, SHA-256 verified before anything is
 offered — and received video plays right in the page. Extracted from a larger

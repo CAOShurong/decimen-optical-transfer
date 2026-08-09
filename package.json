@@ -40,6 +40,7 @@
     "build:all": "npm run build && npm run build:standalone",
     "preview": "vite preview",
     "icons": "node --import tsx build/make-icons.ts",
+    "preview:terminal": "node --import tsx build/make-terminal-preview.ts",
     "test": "node --import tsx --test tests/*.test.ts",
     "verify:cli-package": "node --import tsx build/verify-cli-package.ts",
     "prepack": "npm run build:cli"
